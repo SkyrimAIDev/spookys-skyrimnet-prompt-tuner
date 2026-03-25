@@ -30,20 +30,35 @@ export function parseProposal(raw: string): TunerProposal {
     cleaned = fenceMatch[1].trim();
   }
 
-  // Strip leading/trailing non-JSON text
-  const firstBrace = cleaned.indexOf("{");
-  const lastBrace = cleaned.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+  // Try to extract JSON by finding the outermost valid JSON object.
+  // The LLM sometimes outputs prose analysis before the JSON.
+  let parsed: Record<string, unknown> | null = null;
+
+  // Strategy 1: try parsing the whole cleaned string
+  try {
+    const stripped = cleaned.replace(/,\s*([}\]])/g, "$1");
+    parsed = JSON.parse(stripped);
+  } catch {
+    // Strategy 2: find each '{' and try parsing from there to the end
+    for (let i = 0; i < cleaned.length && !parsed; i++) {
+      if (cleaned[i] !== "{") continue;
+      // Try from this '{' to the last '}' in the remaining text
+      const remaining = cleaned.slice(i);
+      const lastBrace = remaining.lastIndexOf("}");
+      if (lastBrace === -1) continue;
+      const candidate = remaining.slice(0, lastBrace + 1).replace(/,\s*([}\]])/g, "$1");
+      try {
+        const obj = JSON.parse(candidate);
+        if (typeof obj === "object" && obj !== null && !Array.isArray(obj)) {
+          parsed = obj;
+        }
+      } catch {
+        // Try next '{'
+      }
+    }
   }
 
-  // Remove trailing commas before } or ]
-  cleaned = cleaned.replace(/,\s*([}\]])/g, "$1");
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch {
+  if (!parsed) {
     throw new Error(`Failed to parse proposal JSON: ${raw.substring(0, 200)}`);
   }
 

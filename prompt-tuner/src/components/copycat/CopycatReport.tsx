@@ -254,29 +254,46 @@ export function CopycatReport() {
                     {round.roundNumber}.
                   </span>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1">
-                      {round.phase === "complete" ? (
-                        <CheckCircle2 className="h-2.5 w-2.5 text-green-500 shrink-0" />
-                      ) : round.phase === "error" ? (
-                        <AlertCircle className="h-2.5 w-2.5 text-red-500 shrink-0" />
+                    <div className="flex items-start gap-1 min-w-0">
+                      <div className="shrink-0 mt-0.5">
+                        {round.phase === "complete" ? (
+                          <CheckCircle2 className="h-2.5 w-2.5 text-green-500" />
+                        ) : round.phase === "error" ? (
+                          <AlertCircle className="h-2.5 w-2.5 text-red-500" />
+                        ) : (
+                          <Loader2 className="h-2.5 w-2.5 animate-spin text-blue-500" />
+                        )}
+                      </div>
+                      {round.error ? (
+                        <span className="break-words text-red-400" title={round.error}>
+                          Error: {round.error.length > 120 ? round.error.substring(0, 120) + "\u2026" : round.error}
+                        </span>
                       ) : (
-                        <Loader2 className="h-2.5 w-2.5 animate-spin text-blue-500 shrink-0" />
-                      )}
-                      <span className="truncate">
-                        {round.effectivenessScore !== null
-                          ? `${round.effectivenessScore}% match`
-                          : round.error
-                            ? `Error: ${round.error}`
+                        <span className="truncate">
+                          {round.effectivenessScore !== null
+                            ? `${round.effectivenessScore}% match`
                             : PHASE_LABELS[round.phase]
-                        }
-                      </span>
+                          }
+                        </span>
+                      )}
                     </div>
                     {round.proposal && (
                       <div className="text-[10px] text-muted-foreground">
-                        {round.proposal.settingsChanges.length} setting{round.proposal.settingsChanges.length !== 1 ? "s" : ""},
-                        {" "}{round.proposal.promptChanges.length} prompt change{round.proposal.promptChanges.length !== 1 ? "s" : ""}
+                        {(() => {
+                          const skipped = round.proposal.promptChanges.filter(c => c.reason?.startsWith("[SKIPPED]"));
+                          const applied = round.proposal.promptChanges.length - skipped.length;
+                          const parts: string[] = [];
+                          if (round.proposal.settingsChanges.length > 0) parts.push(`${round.proposal.settingsChanges.length} setting${round.proposal.settingsChanges.length !== 1 ? "s" : ""}`);
+                          if (applied > 0) parts.push(`${applied} prompt change${applied !== 1 ? "s" : ""}`);
+                          return parts.join(", ") || "No changes";
+                        })()}
                       </div>
                     )}
+                    {round.proposal?.promptChanges.filter(c => c.reason?.startsWith("[SKIPPED]")).map((c, i) => (
+                      <span key={i} className="block text-[10px] text-yellow-500 break-words" title={c.reason || ""}>
+                        Skipped: {c.filePath.split("/").pop()} — search text not found
+                      </span>
+                    ))}
                   </div>
                 </div>
               ))}

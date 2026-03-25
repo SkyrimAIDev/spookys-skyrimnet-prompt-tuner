@@ -176,31 +176,35 @@ Focus on STYLE matching, not absolute quality. Prioritize **substantive** differ
 4. **NEVER spend a round on surface formatting.** If the only remaining differences are punctuation style, spacing, or minor formatting conventions, consider the job done — set stop_tuning to true. These are not worth tuning.
 5. **Stop when matched.** If the target closely matches the reference on substance (score >= 85), set stop_tuning to true.
 6. **Know your limits.** If style differences can't be fixed with your available levers, set stop_tuning to true and explain.
-${canModifyPrompts ? `7. **Choose the RIGHT file to edit.** Use the Pipeline Architecture guide above. The entry-point template (e.g. \`dialogue_response.prompt\`) is mostly structural scaffolding with template syntax — it is rarely the right place to edit. Instead:
-   - For behavior/roleplay/voice changes → edit files in \`submodules/guidelines/\`
-   - For response format/length → edit \`guidelines/0900_response_format.prompt\` or \`system_head/0020_format_rules.prompt\`
-   - For world-building/tone → edit \`system_head/0010_setting.prompt\`
-   - For new rules that don't fit existing files → **create a new submodule file** with an appropriate number
-   - For final-turn instructions → edit or create files in \`submodules/user_final_instructions/\`
-   - Only edit entry-point templates if you need to change the structural assembly itself (very rare)
-8. **For prompt changes: prefer adding over replacing.** The existing prompt files contain carefully crafted instructions tested across thousands of SkyrimNet NPC dialogues. Your default approach should be:
-   - ADD new paragraphs or instructions after existing content
-   - Make surgical wording changes to existing lines when a specific phrase is causing the problem
-   - Only replace or rewrite a section if it directly conflicts with the style you're trying to achieve and a smaller edit won't fix it — and even then, preserve as much of the original intent as possible
-   - Your \`search_text\` should be a SHORT, specific portion where possible; avoid replacing entire files or large blocks unnecessarily
-   - To **create a new file**, use an empty \`search_text\` ("") and put the full file content in \`replace_text\`
-9. **Prompt changes must be universal.** These prompts are used for THOUSANDS of different NPC dialogues across all of Skyrim — guards, merchants, innkeepers, quest characters, companions, etc. Proposed changes must improve dialogue quality for ANY NPC in ANY context. NEVER propose changes that are specific to the current test scenario (e.g., "don't mention Dragonstone", "always reference fire magic", "avoid dungeon locations"). Test your proposed instruction mentally: would it help a blacksmith AND a jarl AND a bard? If not, don't propose it.
-10. **Prompt changes are persistent.** Changes you make in one round carry forward to the next. The target model runs with the modified prompts each round.
-11. **Prefer prompt changes for style issues.** Settings like temperature/maxTokens control randomness and length, but prompt instructions are the most effective lever for controlling response style, personality expression, and dialogue habits.
+${canModifyPrompts ? `7. **Read and understand BEFORE editing.** The full content of each file is shown below with editability tags. Before proposing ANY change:
+   - Read the file's FULL content to understand what instructions already exist
+   - Identify where plain-text instructions sit between template blocks (\`{% %}\`, \`{{ }}\`) — ONLY edit the plain text
+   - Check if an existing instruction already partially covers your intent (modify it rather than adding a duplicate)
+   - Respect the file's structure: if it has numbered sections, conditional branches, or a specific format, maintain that structure
+   - NEVER edit files tagged **[DO NOT EDIT]** — they are pure template scaffolding shown only as context
+   - For files tagged **[EDIT WITH CARE]** — only modify plain-text prose, never restructure template blocks
+8. **Choose between editing an existing file or creating a new one.** First, read all existing files in the relevant submodule to check if your intended instructions are already covered or closely related to existing content. Then:
+   - **Edit an existing file** if your change naturally fits alongside its current instructions (e.g., adding a roleplay rule to the roleplay guidelines file, or tweaking an existing instruction). This avoids scattering related rules across multiple files.
+   - **Create a new file** when your instructions represent a genuinely new topic not covered by any existing file (e.g., prose craft rules when no writing quality file exists). Use a numbered name that places it in the right position within the submodule directory.
+   - Available slots for new files: \`guidelines/0600-0800\` (between roleplay and format), \`user_final_instructions/0300-0600\` (between combat status and audio tags), \`system_head/0015\` (between task description and format rules)
+   - To create a new file: use an empty \`search_text\` ("") and put the full file content in \`replace_text\`
+   - NEVER duplicate instructions that already exist in another file — if a rule is already covered, modify the existing one instead
+9. **When modifying existing files:** Your \`search_text\` must be a SHORT, specific portion of plain-text content — never replace entire files or large blocks. Preserve all template syntax, section markers, and conditional branches exactly as they are. Only modify the natural-language instruction text between template blocks.
+10. **Prompt changes must be universal.** These prompts are used for THOUSANDS of different NPC dialogues across all of Skyrim — guards, merchants, innkeepers, quest characters, companions, etc. Proposed changes must improve dialogue quality for ANY NPC in ANY context. NEVER propose changes that are specific to the current test scenario (e.g., referencing specific locations, quests, or NPC names from the test). Test your proposed instruction mentally: would it help a blacksmith AND a jarl AND a bard? If not, don't propose it.
+11. **Keep additions concise.** SkyrimNet has a default max context of 4096 tokens. The official docs warn: "Too many rules = more hallucinations." Add the minimum instruction needed. A single clear sentence beats a paragraph of explanation.
+12. **Prompt changes are persistent.** Changes you make in one round carry forward to the next. The target model runs with the modified prompts each round.
+13. **Prefer prompt changes for style issues.** Settings like temperature/maxTokens control randomness and length, but prompt instructions are the most effective lever for controlling response style, personality expression, and dialogue habits.
 
 ## SkyrimNet Template Syntax (Inja)
 
 Prompt files use the Inja template engine (similar to Jinja2 but NOT identical). Key syntax rules:
 - Variables: \\\`{{ variable_name }}\\\`, e.g. \\\`{{ decnpc(npc.UUID).name }}\\\`
 - Conditionals: \\\`{% if condition %}\\\`, \\\`{% else if condition %}\\\`, \\\`{% else %}\\\`, \\\`{% endif %}\\\` — NOTE: use \\\`else if\\\`, NOT \\\`elif\\\`
-- Section markers: \\\`[ system ]\\\`, \\\`[ user ]\\\`, \\\`[ assistant ]\\\` — these separate prompt sections
-- Common decorators: \\\`render_subcomponent(name, mode)\\\`, \\\`render_template(path)\\\`, \\\`render_character_profile(mode, UUID)\\\`
-- Some files (especially in \\\`submodules/\\\`) are assembled by the engine into larger prompts
+- Loops: \\\`{% for item in list %}\\\`...\\\`{% endfor %}\\\`
+- Section markers: \\\`[ system ]\\\`, \\\`[ user ]\\\`, \\\`[ assistant ]\\\`, \\\`[ cache ]\\\` — these separate prompt sections
+- Common decorators: \\\`render_subcomponent(name, mode)\\\`, \\\`render_template(path)\\\`, \\\`render_character_profile(mode, UUID)\\\`, \\\`decnpc(UUID).name\\\`, \\\`is_in_combat(UUID)\\\`, \\\`is_narration_enabled()\\\`
+- The \\\`render_mode\\\` variable controls which variant of submodules to render (e.g. "full", "transform", "thoughts")
+- Some files (especially in \\\`submodules/\\\`) are assembled by the engine into larger prompts — a file like \\\`0020_format_rules.prompt\\\` may call \\\`render_subcomponent("guidelines", render_mode)\\\` to include files from \\\`submodules/guidelines/\\\`
 
 **IMPORTANT:** When proposing prompt changes, only modify plain-text instruction content. Do NOT modify template syntax (\\\`{{ }}\\\`, \\\`{% %}\\\`), section markers, or decorator calls unless you fully understand the Inja engine. Adding or editing natural-language instructions between template blocks is safe.` : ""}
 ${customInstructions.trim() ? `

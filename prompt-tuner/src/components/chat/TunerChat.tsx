@@ -420,6 +420,8 @@ function TunerBubble({ message }: { message: TunerMessage }) {
 
 function parseToolCalls(response: string): ToolCall[] {
   const calls: ToolCall[] = [];
+
+  // Try complete tool calls first
   const invokeRegex = /<invoke\s+name="([^"]+)">([\s\S]*?)<\/invoke>/g;
   let match;
   while ((match = invokeRegex.exec(response)) !== null) {
@@ -433,7 +435,107 @@ function parseToolCalls(response: string): ToolCall[] {
     }
     calls.push({ name, args });
   }
+
+  // If no complete calls found, try to recover truncated tool calls
+  // (LLM ran out of tokens mid-call). Look for <invoke name="write_file">
+  // with at least a path and content parameter, even if the closing tags are missing.
+  if (calls.length === 0 && response.includes("<invoke")) {
+    const truncatedInvoke = /<invoke\s+name="([^"]+)">([\s\S]*)$/;
+    const truncMatch = response.match(truncatedInvoke);
+    if (truncMatch) {
+      const name = truncMatch[1];
+      const body = truncMatch[2];
+      const args: Record<string, string> = {};
+
+      // Try complete parameters first
+      const paramRegex = /<parameter\s+name="([^"]+)">([\s\S]*?)<\/parameter>/g;
+      let paramMatch;
+      while ((paramMatch = paramRegex.exec(body)) !== null) {
+        args[paramMatch[1]] = paramMatch[2];
+      }
+
+      // Try to recover the last truncated parameter (no closing tag)
+      const truncParam = /<parameter\s+name="([^"]+)">([\s\S]+)$/;
+      const truncParamMatch = body.replace(/<parameter\s+name="[^"]+">[^]*?<\/parameter>/g, "").match(truncParam);
+      if (truncParamMatch && !args[truncParamMatch[1]]) {
+        args[truncParamMatch[1]] = truncParamMatch[2];
+      }
+
+      if (Object.keys(args).length > 0) {
+        calls.push({ name, args });
+      }
+    }
+  }
+
   return calls;
+}
+
+/**
+ * Resolve a file path for writing. Handles:
+ * 1. Relative paths (e.g. "characters/foo.prompt") → resolved against active prompt set
+ * 2. Paths in the original prompts dir → remapped to the active prompt set
+ * 3. Active set is "originals" (empty) → returns error telling LLM to ask user to select a set
+ */
+async function resolveWritablePath(filePath: string): Promise<string> {
+  // Already an absolute path in edited-prompts? Pass through.
+  if (/[/\\]edited-prompts[/\\]/.test(filePath)) return filePath;
+
+  const activeSet = useAppStore.getState().activePromptSet;
+
+  // If no edited prompt set is active, auto-create one
+  let setName = activeSet;
+  if (!setName) {
+    // Create a new prompt set named "Chat Edits" (or "Chat Edits 2", etc.)
+    let newName = "Chat Edits";
+    const listRes = await fetch("/api/export/list-sets");
+    if (listRes.ok) {
+      const { sets } = await listRes.json();
+      const existing = new Set((sets || []).map((s: string) => s.toLowerCase()));
+      let counter = 1;
+      while (existing.has(newName.toLowerCase())) {
+        counter++;
+        newName = `Chat Edits ${counter}`;
+      }
+    }
+    // Create the set
+    const createRes = await fetch("/api/export/save-set", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newName }),
+    });
+    if (!createRes.ok) {
+      const errData = await createRes.json().catch(() => ({ error: "unknown" }));
+      return `Error: Failed to create prompt set "${newName}": ${errData.error}. Please create one manually using 'Save Prompt Set' in the top toolbar.`;
+    }
+    // The API sanitizes the name (spaces → underscores), use the sanitized version
+    const createData = await createRes.json();
+    const sanitizedName = createData.name || newName;
+    // Switch the app to use this new set
+    useAppStore.getState().setActivePromptSet(sanitizedName);
+    setName = sanitizedName;
+  }
+
+  // Resolve the active set's base path
+  const resolveRes = await fetch(`/api/files/resolve-prompt-set?name=${encodeURIComponent(setName)}`);
+  if (!resolveRes.ok) return `Error: Could not resolve prompt set "${setName}"`;
+  const { basePath } = await resolveRes.json();
+
+  // If the path is relative (no drive letter / no leading slash), resolve against the prompt set
+  const isAbsolute = /^[A-Za-z]:/.test(filePath) || filePath.startsWith("/");
+  if (!isAbsolute) {
+    return `${basePath}/${filePath}`.replace(/\\/g, "/");
+  }
+
+  // If the path points to original prompts, remap to the active set
+  if (/[/\\]original[_-]prompts?[/\\]/.test(filePath) || /[/\\]reference-docs[/\\]/.test(filePath)) {
+    // Extract the relative portion after the prompts root
+    const match = filePath.match(/[/\\](?:original[_-]prompts?|prompts)[/\\](.*)/);
+    if (match) {
+      return `${basePath}/${match[1]}`.replace(/\\/g, "/");
+    }
+  }
+
+  return filePath;
 }
 
 async function executeToolCall(
@@ -449,8 +551,11 @@ async function executeToolCall(
       return data.content ?? data.error ?? "File not found";
     }
     case "write_file": {
-      const filePath = (args.path || args.file_path || "").trim();
+      let filePath = (args.path || args.file_path || "").trim();
       const content = args.content ?? "";
+      // Resolve relative paths against the active prompt set
+      filePath = await resolveWritablePath(filePath);
+      if (filePath.startsWith("Error:")) return filePath;
       const res = await fetch("/api/files/write", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -465,10 +570,13 @@ async function executeToolCall(
         store.markFileSaved(filePath);
       }
       store.refreshTree();
-      return "File written successfully";
+      return `File written successfully to: ${filePath}`;
     }
     case "edit_file": {
-      const filePath = (args.path || args.file_path || "").trim();
+      let filePath = (args.path || args.file_path || "").trim();
+      // Resolve relative paths against the active prompt set
+      filePath = await resolveWritablePath(filePath);
+      if (filePath.startsWith("Error:")) return filePath;
       const oldStr = args.old_str ?? "";
       const newStr = args.new_str ?? "";
       // Read current content

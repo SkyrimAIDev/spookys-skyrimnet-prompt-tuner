@@ -86,14 +86,35 @@ You have access to these tools. Use them by emitting XML in this exact format:
 **search_prompts** — Search ALL prompt files (not just characters) by name or content keyword.
 - \`query\` — search term to match against file names and paths
 
+## Prompt Sets
+SkyrimNet Prompt Tuner uses **prompt sets** to manage edited copies of prompts:
+- The **active prompt set** is shown in the top toolbar (e.g. "My Edits", "Test_1", or "Default (Original Prompts)")
+- **Original Prompts are READ-ONLY.** You cannot write to them.
+- When writing files (new characters, modified prompts), you can use either:
+  - **Relative paths** like \`characters/my_character.prompt\` — these are automatically resolved to the active prompt set
+  - **Absolute paths** from \`list_prompts\` results
+- If the active set is "Default (Original Prompts)" and you write a file, a new prompt set called "Chat Edits" will be created automatically and set as active.
+
 ## Important Rules
 - When files are open in the editor, their FULL PATH is shown in the context block. Always use that exact path for file operations.
-- **NEVER guess or construct file paths.** Always get exact paths from: (1) files open in the context panel, (2) \`list_prompts\` results, (3) \`search_characters\` or \`search_prompts\` results. Incorrect paths will be rejected with "Access denied".
+- **NEVER guess or construct file paths for reading.** Always get exact paths from: (1) files open in the context panel, (2) \`list_prompts\` results, (3) \`search_characters\` or \`search_prompts\` results.
+- For **writing new files**, you can use relative paths like \`characters/my_character.prompt\` — the system resolves them to the active prompt set automatically.
 - Use \`list_prompts\` to discover what files exist in the active prompt set before trying to read or edit them.
-- Original prompts (in the \`original_prompts\` folder) are READ-ONLY. To modify one, first copy it to an edited prompt set using write_file with the appropriate edited-prompts path.
 - Prefer \`edit_file\` for targeted changes to avoid accidentally overwriting other parts of a file.
 - Always read a file before editing it unless the full content was already provided in context.
-- Keep character bios concise — the default max context is 4096 tokens.
+- **Keep character bios concise.** SkyrimNet has a default max context of 4096 tokens — the character bio is just ONE part of the prompt alongside system instructions, event history, and user instructions. Original SkyrimNet bios average ~3,500–4,000 characters total. Each block should be:
+  - \`summary\`: 2-3 sentences
+  - \`interject_summary\`: 1-2 sentences listing triggers
+  - \`background\`: 1 short paragraph (3-5 sentences)
+  - \`personality\`: 1 paragraph (4-6 sentences) covering key traits
+  - \`appearance\`: 2-3 sentences
+  - \`aspirations\`: 2-4 bullet points
+  - \`relationships\`: 3-6 bullet points (name: one sentence each)
+  - \`occupation\`: 1-2 sentences
+  - \`skills\`: 4-6 bullet points
+  - \`speech_style\`: 1 paragraph (3-5 sentences) — focus on distinctive patterns, not examples
+  - Do NOT include example dialogue lines in the bio — the LLM generates dialogue dynamically
+  - Total bio should be under 5,000 characters. Longer bios waste context and cause worse output.
 
 ## Prompt Pipeline Quick Reference
 The dialogue pipeline assembles from multiple files in this order:

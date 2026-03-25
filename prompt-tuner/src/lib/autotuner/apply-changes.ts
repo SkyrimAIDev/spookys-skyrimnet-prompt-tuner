@@ -61,15 +61,27 @@ function escapeRegex(s: string): string {
 }
 
 /**
+ * Normalize quote characters: smart/curly quotes → straight quotes,
+ * em/en dashes → hyphens, and other common LLM character substitutions.
+ */
+function normalizeQuotes(s: string): string {
+  return s
+    .replace(/[\u2018\u2019\u201A\u2039\u203A]/g, "'")  // smart single quotes
+    .replace(/[\u201C\u201D\u201E\u00AB\u00BB]/g, '"')   // smart double quotes
+    .replace(/[\u2013\u2014]/g, "-")                       // em/en dash → hyphen
+    .replace(/\u2026/g, "...");                             // ellipsis character
+}
+
+/**
  * Build a regex from search text that allows flexible whitespace matching.
  * Splits the text into non-whitespace tokens and joins them with \s+ patterns,
  * so "foo  bar\nbaz" matches "foo bar\n  baz" etc.
  */
-function buildFlexibleRegex(searchText: string): RegExp | null {
+function buildFlexibleRegex(searchText: string, caseInsensitive = false): RegExp | null {
   const tokens = searchText.split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return null;
   const pattern = tokens.map(escapeRegex).join("\\s+");
-  return new RegExp(pattern, "s");
+  return new RegExp(pattern, caseInsensitive ? "si" : "s");
 }
 
 /**
@@ -123,23 +135,34 @@ export async function applyPromptChanges(
     // Read current content
     const readResp = await fetch(readUrl);
     if (!readResp.ok) {
-      throw new Error(`Failed to read ${change.filePath}: HTTP ${readResp.status}`);
+      // Non-fatal: skip this change
+      applied.push({
+        ...change,
+        originalContent: "",
+        modifiedContent: "",
+        reason: `[SKIPPED] Failed to read file: HTTP ${readResp.status}. ${change.reason}`,
+      });
+      continue;
     }
     const { content: originalContent } = await readResp.json();
 
-    let modifiedContent: string;
+    // Try matching with multiple fallback strategies
+    const matchResult = findSearchMatch(originalContent, change.searchText);
 
-    if (originalContent.includes(change.searchText)) {
-      // Exact match
-      modifiedContent = originalContent.replace(change.searchText, change.replaceText);
-    } else {
-      // Fallback: flexible whitespace matching
-      const flexRegex = buildFlexibleRegex(change.searchText);
-      if (!flexRegex || !flexRegex.test(originalContent)) {
-        throw new Error(`Search text not found in ${change.filePath}: "${change.searchText.substring(0, 80)}..."`);
-      }
-      modifiedContent = originalContent.replace(flexRegex, change.replaceText);
+    if (!matchResult) {
+      // Non-fatal: skip this change and report it
+      applied.push({
+        ...change,
+        originalContent,
+        modifiedContent: "",
+        reason: `[SKIPPED] Search text not found — text may have changed since last round. ${change.reason}`,
+      });
+      continue;
     }
+
+    const modifiedContent = originalContent.substring(0, matchResult.index) +
+      change.replaceText +
+      originalContent.substring(matchResult.index + matchResult.length);
 
     // Write modified content
     const writeResp = await fetch("/api/files/write", {
@@ -149,7 +172,13 @@ export async function applyPromptChanges(
     });
 
     if (!writeResp.ok) {
-      throw new Error(`Failed to write ${change.filePath}: HTTP ${writeResp.status}`);
+      applied.push({
+        ...change,
+        originalContent,
+        modifiedContent: "",
+        reason: `[SKIPPED] Failed to write file: HTTP ${writeResp.status}. ${change.reason}`,
+      });
+      continue;
     }
 
     applied.push({
@@ -160,4 +189,64 @@ export async function applyPromptChanges(
   }
 
   return applied;
+}
+
+/**
+ * Try to find the search text in the content using multiple fallback strategies:
+ * 1. Exact match
+ * 2. Flexible whitespace
+ * 3. Normalized quotes + exact
+ * 4. Normalized quotes + flexible whitespace
+ * 5. Case-insensitive flexible whitespace
+ * 6. Normalized + case-insensitive flexible whitespace
+ *
+ * Returns { index, length } of the match in the ORIGINAL content, or null.
+ */
+function findSearchMatch(
+  content: string,
+  searchText: string,
+): { index: number; length: number } | null {
+  // 1. Exact match
+  const exactIdx = content.indexOf(searchText);
+  if (exactIdx !== -1) {
+    return { index: exactIdx, length: searchText.length };
+  }
+
+  // 2. Flexible whitespace
+  const flexRegex = buildFlexibleRegex(searchText);
+  if (flexRegex) {
+    const flexMatch = flexRegex.exec(content);
+    if (flexMatch) return { index: flexMatch.index, length: flexMatch[0].length };
+  }
+
+  // 3. Normalized quotes — exact
+  const normContent = normalizeQuotes(content);
+  const normSearch = normalizeQuotes(searchText);
+  const normIdx = normContent.indexOf(normSearch);
+  if (normIdx !== -1) {
+    return { index: normIdx, length: normSearch.length };
+  }
+
+  // 4. Normalized quotes — flexible whitespace
+  const normFlexRegex = buildFlexibleRegex(normSearch);
+  if (normFlexRegex) {
+    const normFlexMatch = normFlexRegex.exec(normContent);
+    if (normFlexMatch) return { index: normFlexMatch.index, length: normFlexMatch[0].length };
+  }
+
+  // 5. Case-insensitive flexible whitespace (on original)
+  const ciFlexRegex = buildFlexibleRegex(searchText, true);
+  if (ciFlexRegex) {
+    const ciMatch = ciFlexRegex.exec(content);
+    if (ciMatch) return { index: ciMatch.index, length: ciMatch[0].length };
+  }
+
+  // 6. Normalized + case-insensitive flexible whitespace
+  const normCiFlexRegex = buildFlexibleRegex(normSearch, true);
+  if (normCiFlexRegex) {
+    const normCiMatch = normCiFlexRegex.exec(normContent);
+    if (normCiMatch) return { index: normCiMatch.index, length: normCiMatch[0].length };
+  }
+
+  return null;
 }

@@ -14,6 +14,63 @@ import { getCategoryDef } from "@/lib/benchmark/categories";
  * Character bios (submodules/character_bio/*, characters/*.prompt) are handled
  * separately as read-only context further down.
  */
+/**
+ * File editability tags used to annotate prompt files for the tuner LLM.
+ * EDITABLE — safe to modify, mostly plain-text instructions
+ * EDIT_WITH_CARE — mix of template and text; edit only the prose portions
+ * DO_NOT_EDIT — heavy template logic or structural scaffolding; show as read-only context
+ */
+type Editability = "EDITABLE" | "EDIT_WITH_CARE" | "DO_NOT_EDIT";
+
+/**
+ * Map file names → editability. Entries not listed default to EDIT_WITH_CARE.
+ */
+const FILE_EDITABILITY: Record<string, Editability> = {
+  // ── SAFE to edit (mostly plain-text instructions) ──
+  "0010_setting.prompt": "EDITABLE",
+  "0500_roleplay_guidelines.prompt": "EDITABLE",
+  "0900_response_format.prompt": "EDITABLE",
+  "diary_entry.prompt": "EDITABLE",
+  "dynamic_bio_update.prompt": "EDITABLE",
+  "generate_memory.prompt": "EDITABLE",
+  "gamemaster_scene_planner.prompt": "EDITABLE",
+  // ── Edit with care (some template branching) ──
+  "0010_instructions.prompt": "EDIT_WITH_CARE",
+  "0020_format_rules.prompt": "EDIT_WITH_CARE",
+  "dialogue_response.prompt": "EDIT_WITH_CARE",
+  "native_action_selector.prompt": "EDIT_WITH_CARE",
+  "gamemaster_action_selector.prompt": "EDIT_WITH_CARE",
+  "0150_environmental_awareness.prompt": "EDIT_WITH_CARE",
+  "0700_extra_instructions.prompt": "EDIT_WITH_CARE",
+  "0750_embedded_actions.prompt": "EDIT_WITH_CARE",
+  "dialogue_speaker_selector.prompt": "EDIT_WITH_CARE",
+  "player_dialogue_target_selector.prompt": "EDIT_WITH_CARE",
+  // ── DO NOT EDIT (pure template scaffolding) ──
+  "0100_actor_bios.prompt": "DO_NOT_EDIT",
+  "0200_scene_context.prompt": "DO_NOT_EDIT",
+  "0250_omnisight.prompt": "DO_NOT_EDIT",
+  "0400_speech_style_bio.prompt": "DO_NOT_EDIT",
+  "event_history.prompt": "DO_NOT_EDIT",
+  "event_history_compact.prompt": "DO_NOT_EDIT",
+  "event_history_verbose.prompt": "DO_NOT_EDIT",
+  "0200_combat_status.prompt": "DO_NOT_EDIT",
+  "0650_audio_tags.prompt": "DO_NOT_EDIT",
+  "0800_direct_narration.prompt": "DO_NOT_EDIT",
+  "8000_recent_state_changes.prompt": "DO_NOT_EDIT",
+};
+
+function getEditability(fileName: string): Editability {
+  // Strip path to just filename
+  const base = fileName.split("/").pop() || fileName;
+  return FILE_EDITABILITY[base] || "EDIT_WITH_CARE";
+}
+
+const EDITABILITY_LABELS: Record<Editability, string> = {
+  EDITABLE: "EDITABLE — safe to modify",
+  EDIT_WITH_CARE: "EDIT WITH CARE — has template logic, edit prose only",
+  DO_NOT_EDIT: "DO NOT EDIT — template scaffolding, read-only context",
+};
+
 const AGENT_PROMPT_PATHS: Record<string, string[]> = {
   // dialogue_response.prompt renders: system_head (full), event_history,
   // user_final_instructions, character bio, scene context.
@@ -63,8 +120,6 @@ const AGENT_PROMPT_PATHS: Record<string, string[]> = {
   ],
   // dynamic_bio_update.prompt uses ONLY 0010_setting.prompt (not full system_head)
   // Uses event_history_verbose
-  // character_profile_update.prompt and helpers/generate_profile.prompt are NOT
-  // used by the render-bio-update endpoint
   profile_gen: [
     "submodules/system_head/0010_setting.prompt",
     "dynamic_bio_update.prompt",
@@ -176,7 +231,7 @@ export async function fetchPromptContent(
 
   const allFiles: { path: string; name: string; content: string }[] = [];
   let totalLength = 0;
-  const MAX_TOTAL = 24000;
+  const MAX_TOTAL = 30000;
 
   for (const entry of paths) {
     if (totalLength > MAX_TOTAL) break;
@@ -242,8 +297,9 @@ export async function fetchPromptContent(
     // Try reading bios from the fallback chain (active set → originals)
     // Character bios live in characters/<uuid>.prompt
     const bioBasePaths = [basePath, ...fallbackBasePaths];
-    for (const npc of scenarioNpcs) {
+    for (let npcIdx = 0; npcIdx < scenarioNpcs.length; npcIdx++) {
       if (totalLength > MAX_TOTAL) break;
+      const npc = scenarioNpcs[npcIdx];
       const uuid = npc.uuid;
       if (!uuid) continue;
 
@@ -254,22 +310,30 @@ export async function fetchPromptContent(
         if (bioContent !== null) break;
       }
       if (bioContent) {
-        const truncated = bioContent.length > 2000
-          ? bioContent.substring(0, 2000) + "\n... (truncated)"
+        // Primary NPC (first in list) gets a much higher limit so the tuner
+        // can see the full personality, speech_style, etc. Nearby NPCs are shorter.
+        const bioMaxLen = npcIdx === 0 ? 8000 : 2000;
+        const truncated = bioContent.length > bioMaxLen
+          ? bioContent.substring(0, bioMaxLen) + "\n... (truncated)"
           : bioContent;
         bioSections.push(`### ${npc.displayName} (\`${uuid}\`)\n\`\`\`\n${truncated}\n\`\`\``);
-        totalLength += bioContent.length;
+        totalLength += truncated.length;
       }
     }
   }
 
   // Format for the tuner LLM — use f.path in headers so the LLM knows the
-  // exact file path to use in search/replace prompt_changes proposals
+  // exact file path to use in search/replace prompt_changes proposals.
+  // Include editability tag so the LLM knows what's safe to modify.
   const sections = allFiles.map((f) => {
-    const truncated = f.content.length > 3000
-      ? f.content.substring(0, 3000) + "\n... (truncated)"
+    const editability = getEditability(f.name);
+    const label = EDITABILITY_LABELS[editability];
+    // Give more space to editable files, less to read-only context
+    const maxLen = editability === "DO_NOT_EDIT" ? 800 : 4000;
+    const truncated = f.content.length > maxLen
+      ? f.content.substring(0, maxLen) + "\n... (truncated)"
       : f.content;
-    return `### \`${f.path}\`\n\`\`\`\n${truncated}\n\`\`\``;
+    return `### \`${f.path}\`\n**[${label}]**\n\`\`\`\n${truncated}\n\`\`\``;
   });
 
   if (bioSections.length > 0) {

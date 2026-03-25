@@ -12,111 +12,122 @@ import { AGENT_DESCRIPTIONS } from "@/types/config";
 export function buildPipelineGuide(agent: string): string {
   switch (agent) {
     case "default":
-      return `This agent uses the **dialogue response** pipeline. The final prompt sent to the LLM is assembled from multiple files loaded in a specific order. Understanding this pipeline is critical for choosing WHERE to edit.
+      return `This agent uses the **dialogue response** pipeline. The final prompt is assembled from multiple numbered files. Each file is tagged **[EDITABLE]**, **[EDIT WITH CARE]**, or **[DO NOT EDIT]** in the file listings below.
 
-### Assembly Order (system message)
-1. **\`dialogue_response.prompt\`** — Entry-point template. Sets the character identity line ("You are {name}, a {gender} {race}...") and calls \`render_subcomponent("system_head")\`. This file is mostly **structural scaffolding** — editing it changes template structure, NOT behavioral instructions. You should rarely need to edit this file.
-2. **\`submodules/system_head/\`** — Loaded in numerical order within the system message:
-   - \`0010_instructions.prompt\` — Task description ("Respond as {name} in conversation"). Varies by render_mode.
-   - \`0010_setting.prompt\` — **World setting** (nearly empty by default). Best place for universal world-building or tone instructions that should affect ALL agents.
-   - \`0020_format_rules.prompt\` — Loads guidelines (via \`render_subcomponent("guidelines")\`) and length constraints. Edit length rules HERE, not in guidelines.
-   - \`0100_actor_bios.prompt\` — Character profile injection (template-heavy, do not edit)
-   - \`0200_scene_context.prompt\` — Scene/location context injection (template-heavy, do not edit)
-   - \`0250_omnisight.prompt\` — Visual descriptions (template-heavy, do not edit)
-   - \`0400_speech_style_bio.prompt\` — Speech style reference (template-heavy, do not edit)
-3. **\`submodules/guidelines/\`** — Loaded inside system_head via render_subcomponent. These are the **core behavioral rules**:
-   - \`0500_roleplay_guidelines.prompt\` — **Roleplay behavior**: how to embody the character, use background/personality, react authentically. EDIT HERE for changes to roleplay quality, character depth, emotional authenticity.
-   - \`0900_response_format.prompt\` — **Response format**: dialogue vs narration rules, asterisk usage, narration frequency, thought format. EDIT HERE for changes to output structure, narration behavior, formatting.
-   - **To add new guidelines**: Create a new file like \`0600_custom.prompt\` (between 0500 and 0900) for new behavioral rules.
+### IMPORTANT: Read Before You Edit
+Before proposing any change to a file, carefully study its FULL content shown below. Understand:
+- What instructions already exist (don't duplicate them)
+- The file's structure and any Inja template blocks (\`{% if %}\`, \`{{ }}\`)
+- Where plain-text instructions sit BETWEEN template blocks (that's where your edits go)
+- Whether the change you want is already partially covered (modify the existing instruction instead of adding a new one)
 
-### Assembly Order (conversation history)
-4. **\`components/event_history.prompt\`** — Formats conversation history as alternating user/assistant messages. Template-heavy — rarely needs editing.
+### Preferred Approach: Create New Files Over Modifying Existing Ones
+SkyrimNet's extension model is **composition via numbered submodule files**. When possible, create a new file in the right submodule directory rather than modifying existing files. This preserves the original author's tested instructions and makes changes easier to track and revert. Only modify existing files when you need to change or remove a SPECIFIC existing instruction.
 
-### Assembly Order (final user message)
-5. **\`submodules/user_final_instructions/\`** — Loaded in numerical order in the final user message:
-   - \`0150_environmental_awareness.prompt\` — "Reference surroundings naturally"
-   - \`0200_combat_status.prompt\` — Combat state injection
-   - \`0650_audio_tags.prompt\` — TTS/audio tag instructions
-   - \`0700_extra_instructions.prompt\` — Narration toggle reminder
-   - \`0750_embedded_actions.prompt\` — Action system instructions
-   - \`0800_direct_narration.prompt\` — Direct narration cues
-   - \`8000_recent_state_changes.prompt\` — Recent state change summary
-   - **To add final-turn instructions**: Create a new file here (e.g. \`0500_custom.prompt\`).
+### Pipeline Assembly Order
 
-### Decision Guide — Where Should I Edit?
-| Goal | Best file(s) to edit |
-|------|---------------------|
-| Improve roleplay depth, character authenticity | \`guidelines/0500_roleplay_guidelines.prompt\` |
-| Change response length, format, narration rules | \`guidelines/0900_response_format.prompt\` |
-| Add world-building, tone, or universal setting | \`system_head/0010_setting.prompt\` |
-| Add new behavioral rules (new guideline) | Create \`guidelines/0600_custom.prompt\` (or similar number) |
-| Add instructions for the final turn | Create or edit files in \`user_final_instructions/\` |
-| Change task framing (rare) | \`system_head/0010_instructions.prompt\` |
-| Change template structure (very rare) | \`dialogue_response.prompt\` |`;
+**System message:**
+1. \`dialogue_response.prompt\` — Entry-point scaffold. Sets identity line, calls render_subcomponent. DO NOT EDIT.
+2. \`submodules/system_head/\` — Loaded in numerical order:
+   - \`0010_instructions.prompt\` — Task description per render_mode. EDIT WITH CARE (has branching).
+   - \`0010_setting.prompt\` — **World setting (nearly empty by default).** EDITABLE. Best place for universal world-building or tone.
+   - *(slot 0015)* — **Available for new file.** Good for universal behavioral modifiers.
+   - \`0020_format_rules.prompt\` — Loads guidelines + length constraints. EDIT WITH CARE. Only edit the length numbers.
+   - \`0100_actor_bios.prompt\` through \`0400_speech_style_bio.prompt\` — Pure template scaffolding. DO NOT EDIT.
+3. \`submodules/guidelines/\` — Core behavioral rules (loaded by 0020_format_rules via render_subcomponent):
+   - \`0500_roleplay_guidelines.prompt\` — **Roleplay behavior.** EDITABLE. How to embody the character, use personality, react authentically.
+   - *(slots 0600-0800)* — **Available for new files.** Ideal for: writing quality rules, prose craft, emotional depth, conversational naturalism.
+   - \`0900_response_format.prompt\` — **Response format.** EDITABLE. Narration rules, asterisks, length within dialogue, thoughts format. Has conditional branches — edit the prose within branches, don't restructure.
 
-    case "meta_eval":
-      return `This agent uses **standalone target/speaker selector** prompts — they do NOT use system_head or guidelines submodules.
+**Conversation history:**
+4. \`components/event_history.prompt\` — Template-heavy formatter. DO NOT EDIT.
 
-### Files
-- **\`target_selectors/\`** — Target and speaker selection prompts. These are self-contained templates that evaluate who should speak next or who is being addressed.
-- **\`components/event_history_compact.prompt\`** — Compact conversation history format.
-
-Edit the selector prompts directly for changes to selection logic or criteria.`;
-
-    case "action_eval":
-      return `This agent uses the **native action selector** — a standalone prompt that does NOT use system_head or guidelines.
-
-### Files
-- **\`native_action_selector.prompt\`** — Evaluates which game action to perform after dialogue. Self-contained.
-- **\`components/event_history_compact.prompt\`** — Compact conversation history format.
-
-Edit the action selector directly for changes to action evaluation logic.`;
-
-    case "game_master":
-      return `This agent uses **Game Master** prompts — standalone templates that do NOT use system_head or guidelines.
-
-### Files
-- **\`gamemaster_action_selector.prompt\`** — GM decides what happens next (StartConversation, ContinueConversation, Narrate, None).
-- **\`gamemaster_scene_planner.prompt\`** — Creates 4-6 beat scene plans.
-- **\`components/event_history_compact.prompt\`** — Compact conversation history format.
-
-Edit the GM prompts directly for changes to scene planning or action selection logic.`;
-
-    case "memory_gen":
-      return `This agent uses the **memory generation** pipeline. It does NOT use the full system_head — only the setting file.
-
-### Files
-- **\`submodules/system_head/0010_setting.prompt\`** — World setting (shared with dialogue). Edits here affect all agents that use it.
-- **\`memory/generate_memory.prompt\`** — **Main memory generation template**. Edit here for changes to memory quality, format, or selection criteria.
-- **\`components/event_history_verbose.prompt\`** — Verbose conversation history (more detail than compact).
-
-Edit \`generate_memory.prompt\` for memory-specific changes. Edit \`0010_setting.prompt\` only for universal world-building.`;
-
-    case "diary":
-      return `This agent uses the **diary entry** pipeline. It uses the full system_head and guidelines (like dialogue), plus the diary template.
-
-### Assembly Order
-1. **\`submodules/system_head/\`** — Same as dialogue (instructions, setting, format rules, bios, scene)
-2. **\`submodules/guidelines/\`** — Same roleplay/format guidelines as dialogue
-3. **\`diary_entry.prompt\`** — **Main diary template**. Edit here for diary-specific changes.
-4. **\`components/event_history_verbose.prompt\`** — Verbose conversation history.
+**Final user message:**
+5. \`submodules/user_final_instructions/\` — Loaded in numerical order. Last thing the LLM sees before generating:
+   - \`0150_environmental_awareness.prompt\` — EDIT WITH CARE
+   - \`0200_combat_status.prompt\` — DO NOT EDIT (stat injection)
+   - *(slots 0300-0600)* — **Available for new files.** High-impact position for final-turn reminders, quality checks, anti-patterns.
+   - \`0650_audio_tags.prompt\` — DO NOT EDIT (complex TTS logic)
+   - \`0700_extra_instructions.prompt\` — EDIT WITH CARE
+   - \`0750_embedded_actions.prompt\` — EDIT WITH CARE
+   - \`0800_direct_narration.prompt\`, \`8000_recent_state_changes.prompt\` — DO NOT EDIT
 
 ### Decision Guide
-| Goal | Best file to edit |
-|------|------------------|
-| Change diary writing style or format | \`diary_entry.prompt\` |
-| Change roleplay depth (affects dialogue too) | \`guidelines/0500_roleplay_guidelines.prompt\` |
-| Change world setting (affects all agents) | \`system_head/0010_setting.prompt\` |`;
+| Goal | Best approach |
+|------|--------------|
+| Improve roleplay depth / character authenticity | Edit \`guidelines/0500_roleplay_guidelines.prompt\` — append or modify existing instructions |
+| Add writing quality / prose craft rules | **Create \`guidelines/0650_writing_quality.prompt\`** (new file) |
+| Change response length limits | Edit length numbers in \`system_head/0020_format_rules.prompt\` |
+| Change narration frequency / format | Edit \`guidelines/0900_response_format.prompt\` — find the specific rule and modify it |
+| Add world-building / tone / atmosphere | Edit \`system_head/0010_setting.prompt\` (mostly empty, add content) |
+| Add new behavioral rules | **Create \`guidelines/0600_custom.prompt\`** or similar numbered file |
+| Add final-turn reminders / quality checks | **Create \`user_final_instructions/0400_custom.prompt\`** (new file) |
+| Change task framing (rare) | Edit prose in \`system_head/0010_instructions.prompt\` carefully around template blocks |`;
 
-    case "profile_gen":
-      return `This agent uses the **bio update** pipeline. It does NOT use the full system_head — only the setting file.
+    case "meta_eval":
+      return `This agent uses **standalone target/speaker selector** prompts — NO system_head or guidelines.
+
+Read the full file content below before proposing changes. These files mix template logic with selection criteria — only edit the plain-text criteria and reasoning instructions, not the template blocks.
 
 ### Files
-- **\`submodules/system_head/0010_setting.prompt\`** — World setting (shared). Edits here affect all agents.
-- **\`dynamic_bio_update.prompt\`** — **Main bio update template**. Edit here for changes to how character bios evolve.
-- **\`components/event_history_verbose.prompt\`** — Verbose conversation history.
+- **\`target_selectors/\`** — EDIT WITH CARE. Selection criteria (proximity, authority, personal stakes, etc.) are the editable portions.
+- **\`components/event_history_compact.prompt\`** — DO NOT EDIT (template formatter).`;
 
-Edit \`dynamic_bio_update.prompt\` for bio-update-specific changes. This prompt enforces conservative updates ("95% should be MINIMAL or NO CHANGE").`;
+    case "action_eval":
+      return `This agent uses the **native action selector** — standalone, NO system_head or guidelines.
+
+Read the full file content below before proposing changes. The file has conditional JSON vs text output format — preserve both branches.
+
+### Files
+- **\`native_action_selector.prompt\`** — EDIT WITH CARE. The selection criteria and guidelines text are editable. Preserve template conditionals and both format branches.
+- **\`components/event_history_compact.prompt\`** — DO NOT EDIT (template formatter).`;
+
+    case "game_master":
+      return `This agent uses **Game Master** prompts — standalone, NO system_head or guidelines.
+
+Read the full file content below before proposing changes. Both files have conditional branches for continuous mode and scene plans — edit the prose, not the branching structure.
+
+### Files
+- **\`gamemaster_action_selector.prompt\`** — EDIT WITH CARE. The Style section and action descriptions are the main editable portions. Has complex conditional branches for continuous mode — preserve these.
+- **\`gamemaster_scene_planner.prompt\`** — EDITABLE. Mostly plain text. Beat types, planning guidelines, and player independence rules are all editable. Preserve the JSON output format.
+- **\`components/event_history_compact.prompt\`** — DO NOT EDIT (template formatter).`;
+
+    case "memory_gen":
+      return `This agent uses the **memory generation** pipeline — only the setting file, NOT full system_head.
+
+Read the full file content below before proposing changes. The memory prompt has specific JSON format requirements that MUST be preserved.
+
+### Files
+- **\`submodules/system_head/0010_setting.prompt\`** — EDITABLE. World setting (shared across agents). Keep additions concise.
+- **\`memory/generate_memory.prompt\`** — EDITABLE. Content guidelines, style examples, importance scoring are all editable prose. The "Be CONCISE but SPECIFIC" philosophy is key. Preserve JSON output format.
+- **\`components/event_history_verbose.prompt\`** — DO NOT EDIT (template formatter).`;
+
+    case "diary":
+      return `This agent uses the **diary entry** pipeline — full system_head + guidelines (like dialogue), plus the diary template.
+
+Read the full file content below before proposing changes. The diary prompt has 10 numbered writing guidelines — understand what's already there before adding or modifying.
+
+### Files
+- **\`submodules/system_head/\`** and **\`submodules/guidelines/\`** — Same as dialogue pipeline (see dialogue guide for details).
+- **\`diary_entry.prompt\`** — EDITABLE. The 10 numbered guidelines control diary quality: emotional depth, scene expansion, transitions, physical grounding. Length target (\`targetEntryLength\`) is a template variable. Preserve JSON output format.
+- **\`components/event_history_verbose.prompt\`** — DO NOT EDIT (template formatter).
+
+### Decision Guide
+| Goal | Best approach |
+|------|--------------|
+| Change diary writing style | Edit the numbered guidelines in \`diary_entry.prompt\` |
+| Change roleplay depth (affects dialogue too) | Edit \`guidelines/0500_roleplay_guidelines.prompt\` |
+| Change world setting (affects all agents) | Edit \`system_head/0010_setting.prompt\` |`;
+
+    case "profile_gen":
+      return `This agent uses the **bio update** pipeline — only the setting file, NOT full system_head.
+
+Read the full file content below before proposing changes. This prompt has extensive block definitions and a conservative update philosophy — understand the existing rules before modifying.
+
+### Files
+- **\`submodules/system_head/0010_setting.prompt\`** — EDITABLE. World setting (shared across agents).
+- **\`dynamic_bio_update.prompt\`** — EDITABLE. The conservative update philosophy ("95% should be MINIMAL or NO CHANGE") is the core tuning target. Block definitions, target lengths, and pruning strategies are editable. Preserve JSON output format and block name references.
+- **\`components/event_history_verbose.prompt\`** — DO NOT EDIT (template formatter).`;
 
     default:
       return `Review the prompt files below. Each file serves a specific role in the pipeline. Choose the most appropriate file for your edit based on what aspect of behavior you want to change.`;
@@ -294,20 +305,22 @@ Your job is to analyze benchmark results and assessments, then propose specific 
 4. **NEVER repeat a failed approach.** Before proposing any change, check the previous rounds. If a setting value was already tried and produced poor results, do NOT set it back to that value. Each round must try something meaningfully new — not a combination that is logically equivalent to a prior failure.
 5. **Be specific in reasoning.** Explain why each change should help and how it differs from what was already tried.
 6. **Know your limits.** If the assessment identifies issues that CANNOT be fixed with your available tuning levers (e.g. the prompt needs format changes but you can only tune settings), set stop_tuning to true and explain what changes are needed in stop_reason. Do not waste rounds re-testing settings when the problem is clearly in the prompt.
-${canModifyPrompts ? `7. **Choose the RIGHT file to edit.** Use the Pipeline Architecture guide above. The entry-point template (e.g. \`dialogue_response.prompt\`) is mostly structural scaffolding with template syntax — it is rarely the right place to edit. Instead:
-   - For behavior/roleplay changes → edit files in \`submodules/guidelines/\`
-   - For response format/length → edit \`guidelines/0900_response_format.prompt\` or \`system_head/0020_format_rules.prompt\`
-   - For world-building/tone → edit \`system_head/0010_setting.prompt\`
-   - For new rules that don't fit existing files → **create a new submodule file** with an appropriate number
-   - For final-turn instructions → edit or create files in \`submodules/user_final_instructions/\`
-   - Only edit entry-point templates if you need to change the structural assembly itself (very rare)
-8. **For prompt changes: prefer adding over replacing.** The existing prompt files contain carefully crafted instructions tested across thousands of SkyrimNet NPC dialogues. Your default approach should be:
-   - ADD new paragraphs or instructions after existing content
-   - Make surgical wording changes to existing lines when a specific phrase is directly causing the problem
-   - Only replace or rewrite a section if it directly conflicts with the improvement you're trying to make and a smaller edit won't fix it — and even then, preserve as much of the original intent as possible
-   - Your \`search_text\` should be a SHORT, specific portion where possible; avoid replacing entire files or large blocks unnecessarily
-   - To **create a new file**, use an empty \`search_text\` ("") and put the full file content in \`replace_text\`
-9. **Prompt changes must be universal.** These prompts are used for THOUSANDS of different NPC dialogues across all of Skyrim — guards, merchants, innkeepers, quest characters, companions, etc. Proposed changes must improve dialogue quality for ANY NPC in ANY context. NEVER propose changes that are specific to the current benchmark scenario (e.g., referencing specific locations, quests, or NPC names from the test). Test your proposed instruction mentally: would it help a blacksmith AND a jarl AND a bard? If not, don't propose it.
+${canModifyPrompts ? `7. **Read and understand BEFORE editing.** The full content of each file is shown below with editability tags. Before proposing ANY change:
+   - Read the file's FULL content to understand what instructions already exist
+   - Identify where plain-text instructions sit between template blocks (\`{% %}\`, \`{{ }}\`) — ONLY edit the plain text
+   - Check if an existing instruction already partially covers your intent (modify it rather than adding a duplicate)
+   - Respect the file's structure: if it has numbered sections, conditional branches, or a specific format, maintain that structure
+   - NEVER edit files tagged **[DO NOT EDIT]** — they are pure template scaffolding shown only as context
+   - For files tagged **[EDIT WITH CARE]** — only modify plain-text prose, never restructure template blocks
+8. **Choose between editing an existing file or creating a new one.** First, read all existing files in the relevant submodule to check if your intended instructions are already covered or closely related to existing content. Then:
+   - **Edit an existing file** if your change naturally fits alongside its current instructions (e.g., adding a roleplay rule to the roleplay guidelines file, or tweaking an existing instruction). This avoids scattering related rules across multiple files.
+   - **Create a new file** when your instructions represent a genuinely new topic not covered by any existing file (e.g., prose craft rules when no writing quality file exists). Use a numbered name that places it in the right position within the submodule directory.
+   - Available slots for new files: \`guidelines/0600-0800\` (between roleplay and format), \`user_final_instructions/0300-0600\` (between combat status and audio tags), \`system_head/0015\` (between task description and format rules)
+   - To create a new file: use an empty \`search_text\` ("") and put the full file content in \`replace_text\`
+   - NEVER duplicate instructions that already exist in another file — if a rule is already covered, modify the existing one instead
+9. **When modifying existing files:** Your \`search_text\` must be a SHORT, specific portion of plain-text content — never replace entire files or large blocks. Preserve all template syntax, section markers, and conditional branches exactly as they are. Only modify the natural-language instruction text between template blocks.
+10. **Prompt changes must be universal.** These prompts are used for THOUSANDS of different NPC dialogues across all of Skyrim — guards, merchants, innkeepers, quest characters, companions, etc. Proposed changes must improve dialogue quality for ANY NPC in ANY context. NEVER propose changes that are specific to the current benchmark scenario (e.g., referencing specific locations, quests, or NPC names from the test). Test your proposed instruction mentally: would it help a blacksmith AND a jarl AND a bard? If not, don't propose it.
+11. **Keep additions concise.** SkyrimNet has a default max context of 4096 tokens. The official docs warn: "Too many rules = more hallucinations." Add the minimum instruction needed. A single clear sentence beats a paragraph of explanation.
 ## SkyrimNet Template Syntax (Inja)
 
 Prompt files use the Inja template engine (similar to Jinja2 but NOT identical). Key syntax rules:
@@ -320,9 +333,9 @@ Prompt files use the Inja template engine (similar to Jinja2 but NOT identical).
 - Some files (especially in \`submodules/\`) are assembled by the engine into larger prompts — a file like \`0020_format_rules.prompt\` may call \`render_subcomponent("guidelines", render_mode)\` to include files from \`submodules/guidelines/\`
 
 **IMPORTANT:** When proposing prompt changes, only modify plain-text instruction content. Do NOT modify template syntax (\`{{ }}\`, \`{% %}\`), section markers, or decorator calls unless you fully understand the Inja engine. Adding or editing natural-language instructions between template blocks is safe.` : ""}
-10. **Avoid enabling reasoning.** For SkyrimNet roleplay agents, \`allowReasoning: false\` produces better results 9 times out of 10. Reasoning adds latency and token cost without improving dialogue quality. Only enable it if the task requires complex multi-step logical analysis (not creative text generation).
-11. **Ignore self-explanation quality.** The model's self-explanation is generated in a separate diagnostic call with its own token budget. Changing inference settings (especially maxTokens) will NOT affect explanation verbosity. Focus only on the actual benchmark response quality.${ignoreFormatScoring ? `
-12. **IGNORE FORMAT.** The user has opted to skip format scoring. Do NOT propose changes aimed at fixing format, JSON structure, metadata fields, importance scores, emotion fields, or any output format aspects. The output format is dictated by SkyrimNet's engine requirements and is correct as-is. Focus exclusively on content quality, accuracy, and efficiency.` : ""}
+${canModifyPrompts ? "12" : "7"}. **Avoid enabling reasoning.** For SkyrimNet roleplay agents, \`allowReasoning: false\` produces better results 9 times out of 10. Reasoning adds latency and token cost without improving dialogue quality. Only enable it if the task requires complex multi-step logical analysis (not creative text generation).
+${canModifyPrompts ? "13" : "8"}. **Ignore self-explanation quality.** The model's self-explanation is generated in a separate diagnostic call with its own token budget. Changing inference settings (especially maxTokens) will NOT affect explanation verbosity. Focus only on the actual benchmark response quality.${ignoreFormatScoring ? `
+${canModifyPrompts ? "14" : "9"}. **IGNORE FORMAT.** The user has opted to skip format scoring. Do NOT propose changes aimed at fixing format, JSON structure, metadata fields, importance scores, emotion fields, or any output format aspects. The output format is dictated by SkyrimNet's engine requirements and is correct as-is. Focus exclusively on content quality, accuracy, and efficiency.` : ""}
 ${customInstructions.trim() ? `
 ## User Instructions (PRIORITY — follow these above all other guidelines)
 

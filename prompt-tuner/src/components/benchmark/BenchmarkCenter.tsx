@@ -180,7 +180,7 @@ function TurnBlock({
   const activeOutput = group.outputs[activePromptProfile];
   const activeMessages = activeOutput?.subtask?.messages ?? [];
   const messagesText = activeMessages
-    .map((m) => `[${m.role}] ${m.content}`)
+    .map((m, i, arr) => `[${getMessageLabel(m, i, arr).label}] ${m.content}`)
     .join("\n\n");
 
   return (
@@ -272,7 +272,7 @@ function TurnBlock({
               <div className="max-h-60 overflow-auto px-2.5 py-2 space-y-2">
                 {activeMessages.length > 0 ? (
                   activeMessages.map((msg, i) => (
-                    <PromptMessage key={i} message={msg} />
+                    <PromptMessage key={i} message={msg} index={i} allMessages={activeMessages} />
                   ))
                 ) : (
                   <span className="text-[10px] text-muted-foreground italic">
@@ -331,7 +331,7 @@ function SubtaskBlock({
   } | null>(null);
 
   const messagesText = group.messages
-    .map((m) => `[${m.role}] ${m.content}`)
+    .map((m, i, arr) => `[${getMessageLabel(m, i, arr).label}] ${m.content}`)
     .join("\n\n");
 
   return (
@@ -388,7 +388,7 @@ function SubtaskBlock({
           {promptExpanded && (
             <div className="border-t max-h-60 overflow-auto px-2.5 py-2 space-y-2">
               {group.messages.map((msg, i) => (
-                <PromptMessage key={i} message={msg} />
+                <PromptMessage key={i} message={msg} index={i} allMessages={group.messages} />
               ))}
             </div>
           )}
@@ -427,8 +427,58 @@ function SubtaskBlock({
 
 /* ── Prompt Message ──────────────────────────────────────────────────── */
 
-function PromptMessage({ message }: { message: ChatMessage }) {
-  const roleClass = ROLE_COLORS[message.role] ?? "";
+/**
+ * Derive a contextual label for a message in a SkyrimNet dialogue prompt.
+ * - system → "SYSTEM"
+ * - The last user message → "INSTRUCTIONS" (contains final pipeline instructions)
+ * - Earlier user messages → "PREV PLAYER" (player dialogue from conversation history)
+ * - assistant messages followed by more user messages → "PREV NPC" (NPC responses from history)
+ * - The final assistant before the last user → "PREV NPC"
+ */
+function getMessageLabel(
+  message: ChatMessage,
+  index: number,
+  allMessages: ChatMessage[],
+): { label: string; colorClass: string } {
+  if (message.role === "system") {
+    return { label: "SYSTEM", colorClass: ROLE_COLORS.system };
+  }
+
+  // Find the last user message index
+  let lastUserIdx = -1;
+  for (let i = allMessages.length - 1; i >= 0; i--) {
+    if (allMessages[i].role === "user") { lastUserIdx = i; break; }
+  }
+
+  // Find the second-to-last user message (the current player line before instructions)
+  let secondLastUserIdx = -1;
+  for (let i = lastUserIdx - 1; i >= 0; i--) {
+    if (allMessages[i].role === "user") { secondLastUserIdx = i; break; }
+  }
+
+  if (message.role === "user") {
+    if (index === lastUserIdx) {
+      return { label: "INSTRUCTIONS", colorClass: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30" };
+    }
+    if (index === secondLastUserIdx) {
+      return { label: "PLAYER", colorClass: ROLE_COLORS.user };
+    }
+    return { label: "PREV PLAYER", colorClass: "bg-blue-500/10 text-blue-400/70 border-blue-500/20" };
+  }
+
+  if (message.role === "assistant") {
+    // Check if this is the last assistant before the current player turn
+    if (secondLastUserIdx !== -1 && index > secondLastUserIdx) {
+      return { label: "NPC", colorClass: ROLE_COLORS.assistant };
+    }
+    return { label: "PREV NPC", colorClass: "bg-emerald-500/10 text-emerald-400/70 border-emerald-500/20" };
+  }
+
+  return { label: String(message.role).toUpperCase(), colorClass: "" };
+}
+
+function PromptMessage({ message, index, allMessages }: { message: ChatMessage; index: number; allMessages: ChatMessage[] }) {
+  const { label, colorClass } = getMessageLabel(message, index, allMessages);
   const [expanded, setExpanded] = useState(false);
   const isLong = message.content.length > 500;
   const displayText =
@@ -440,9 +490,9 @@ function PromptMessage({ message }: { message: ChatMessage }) {
     <div>
       <Badge
         variant="outline"
-        className={`text-[9px] px-1 py-0 font-mono mb-1 ${roleClass}`}
+        className={`text-[9px] px-1 py-0 font-mono mb-1 ${colorClass}`}
       >
-        {message.role}
+        {label}
       </Badge>
       <pre className="whitespace-pre-wrap break-words text-[10px] font-mono leading-relaxed text-muted-foreground rounded bg-background p-1.5">
         {displayText}

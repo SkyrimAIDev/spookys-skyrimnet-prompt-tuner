@@ -14,6 +14,45 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useState } from "react";
+import type { ChatMessage } from "@/types/llm";
+
+/**
+ * Derive a contextual label for a message in a SkyrimNet dialogue prompt.
+ */
+function getMessageLabel(
+  message: ChatMessage,
+  index: number,
+  allMessages: ChatMessage[],
+): { label: string; colorClass: string } {
+  if (message.role === "system") {
+    return { label: "SYSTEM", colorClass: "text-blue-400" };
+  }
+
+  let lastUserIdx = -1;
+  for (let i = allMessages.length - 1; i >= 0; i--) {
+    if (allMessages[i].role === "user") { lastUserIdx = i; break; }
+  }
+
+  let secondLastUserIdx = -1;
+  for (let i = lastUserIdx - 1; i >= 0; i--) {
+    if (allMessages[i].role === "user") { secondLastUserIdx = i; break; }
+  }
+
+  if (message.role === "user") {
+    if (index === lastUserIdx) return { label: "INSTRUCTIONS", colorClass: "text-yellow-400" };
+    if (index === secondLastUserIdx) return { label: "PLAYER", colorClass: "text-green-400" };
+    return { label: "PREV PLAYER", colorClass: "text-green-400/60" };
+  }
+
+  if (message.role === "assistant") {
+    if (secondLastUserIdx !== -1 && index > secondLastUserIdx) {
+      return { label: "NPC", colorClass: "text-amber-400" };
+    }
+    return { label: "PREV NPC", colorClass: "text-amber-400/60" };
+  }
+
+  return { label: String(message.role).toUpperCase(), colorClass: "text-muted-foreground" };
+}
 
 const PHASE_LABELS: Record<TunerPhase, string> = {
   idle: "Waiting",
@@ -207,18 +246,19 @@ function TunerRoundCard({
                 <div className="space-y-2">
                   {/* Prompt messages for this turn */}
                   <div className="space-y-1.5">
-                    {turn.messages.map((msg, i) => (
-                      <div key={i} className="space-y-0.5">
-                        <div className={`text-[10px] font-medium uppercase tracking-wider ${
-                          msg.role === "system" ? "text-blue-400" : msg.role === "user" ? "text-green-400" : "text-amber-400"
-                        }`}>
-                          {msg.role}
+                    {turn.messages.map((msg, i) => {
+                      const { label, colorClass } = getMessageLabel(msg, i, turn.messages);
+                      return (
+                        <div key={i} className="space-y-0.5">
+                          <div className={`text-[10px] font-medium uppercase tracking-wider ${colorClass}`}>
+                            {label}
+                          </div>
+                          <pre className="whitespace-pre-wrap text-xs bg-muted/50 rounded p-2 max-h-64 overflow-auto">
+                            {msg.content}
+                          </pre>
                         </div>
-                        <pre className="whitespace-pre-wrap text-xs bg-muted/50 rounded p-2 max-h-64 overflow-auto">
-                          {msg.content}
-                        </pre>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                   {/* Response for this turn */}
                   <div className="space-y-0.5">
@@ -255,18 +295,19 @@ function TunerRoundCard({
                 badge={`${benchResult.messages.length} messages`}
               >
                 <div className="space-y-1.5">
-                  {benchResult.messages.map((msg, i) => (
-                    <div key={i} className="space-y-0.5">
-                      <div className={`text-[10px] font-medium uppercase tracking-wider ${
-                        msg.role === "system" ? "text-blue-400" : msg.role === "user" ? "text-green-400" : "text-amber-400"
-                      }`}>
-                        {msg.role}
+                  {benchResult.messages.map((msg, i) => {
+                    const { label, colorClass } = getMessageLabel(msg, i, benchResult.messages);
+                    return (
+                      <div key={i} className="space-y-0.5">
+                        <div className={`text-[10px] font-medium uppercase tracking-wider ${colorClass}`}>
+                          {label}
+                        </div>
+                        <pre className="whitespace-pre-wrap text-xs bg-muted/50 rounded p-2 max-h-64 overflow-auto">
+                          {msg.content}
+                        </pre>
                       </div>
-                      <pre className="whitespace-pre-wrap text-xs bg-muted/50 rounded p-2 max-h-64 overflow-auto">
-                        {msg.content}
-                      </pre>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </CollapsibleSection>
             )}
