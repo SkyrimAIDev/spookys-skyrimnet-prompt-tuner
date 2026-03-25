@@ -92,6 +92,26 @@ export async function applyPromptChanges(
   const applied: PromptChange[] = [];
 
   for (const change of changes) {
+    // Empty searchText = create a new file with replaceText as content
+    if (!change.searchText || change.searchText.trim() === "") {
+      const writeResp = await fetch("/api/files/write", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filePath: change.filePath, content: change.replaceText }),
+      });
+
+      if (!writeResp.ok) {
+        throw new Error(`Failed to create ${change.filePath}: HTTP ${writeResp.status}`);
+      }
+
+      applied.push({
+        ...change,
+        originalContent: "",
+        modifiedContent: change.replaceText,
+      });
+      continue;
+    }
+
     // Build the read URL with optional fallbacks so that if the file doesn't exist in
     // the temp set yet, we seed it from the source set (or the original prompts).
     let readUrl = `/api/files/read?path=${encodeURIComponent(change.filePath)}`;

@@ -80,9 +80,27 @@ You have access to these tools. Use them by emitting XML in this exact format:
 **search_characters** — Search for a character by name.
 - \`query\` — character name to search
 
+**list_prompts** — List all prompt files in the active prompt set (or originals if none). Returns full paths organized by directory. Use this first to discover what files exist before trying to read them.
+- \`directory\` — (optional) subdirectory to list, e.g. "submodules/guidelines" or "characters". If omitted, lists top-level structure with all subdirectories.
+
+**search_prompts** — Search ALL prompt files (not just characters) by name or content keyword.
+- \`query\` — search term to match against file names and paths
+
 ## Important Rules
 - When files are open in the editor, their FULL PATH is shown in the context block. Always use that exact path for file operations.
+- **NEVER guess or construct file paths.** Always get exact paths from: (1) files open in the context panel, (2) \`list_prompts\` results, (3) \`search_characters\` or \`search_prompts\` results. Incorrect paths will be rejected with "Access denied".
+- Use \`list_prompts\` to discover what files exist in the active prompt set before trying to read or edit them.
 - Original prompts (in the \`original_prompts\` folder) are READ-ONLY. To modify one, first copy it to an edited prompt set using write_file with the appropriate edited-prompts path.
 - Prefer \`edit_file\` for targeted changes to avoid accidentally overwriting other parts of a file.
 - Always read a file before editing it unless the full content was already provided in context.
-- Keep character bios concise — the default max context is 4096 tokens.`;
+- Keep character bios concise — the default max context is 4096 tokens.
+
+## Prompt Pipeline Quick Reference
+The dialogue pipeline assembles from multiple files in this order:
+1. \`dialogue_response.prompt\` (entry point — mostly template scaffolding)
+2. \`submodules/system_head/\` (0010_instructions, 0010_setting, 0020_format_rules, 0100_actor_bios, etc.)
+3. \`submodules/guidelines/\` (0500_roleplay_guidelines, 0900_response_format — loaded by system_head)
+4. \`components/event_history.prompt\` (conversation history)
+5. \`submodules/user_final_instructions/\` (final user message instructions)
+
+Use \`list_prompts\` to see exact paths for these files in the active prompt set.`;

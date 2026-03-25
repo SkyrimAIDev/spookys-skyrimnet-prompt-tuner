@@ -47,6 +47,14 @@ npm install          # installs Next.js app dependencies
 
 ## Build Steps
 
+> **Before every build:** Increment the version in **`package.json`** (root).
+> The version flows into the output filename (`SkyrimNet-Prompt-Tuner-{version}-win-x64.zip`)
+> and the Electron app metadata. Forgetting this will overwrite the previous build artifact.
+>
+> ```json
+> { "version": "1.3.0" }
+> ```
+
 ### 1. Full build (Next.js + package)
 
 ```bash

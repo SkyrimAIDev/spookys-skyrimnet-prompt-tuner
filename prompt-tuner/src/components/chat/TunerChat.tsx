@@ -22,6 +22,9 @@ import {
   FileText,
   X,
   GripVertical,
+  ChevronRight,
+  Copy,
+  Check,
 } from "lucide-react";
 
 interface ToolCall {
@@ -300,6 +303,79 @@ export function TunerChat() {
   );
 }
 
+function ToolCallBlock({ call }: { call: ToolCall }) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Build the full copyable text: args + result
+  const fullText = [
+    ...Object.entries(call.args).map(([k, v]) => `${k}=${v}`),
+    ...(call.result ? [call.result] : []),
+  ].join("\n");
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(fullText).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  // Collapsed preview: show truncated args
+  const argPreview = Object.entries(call.args)
+    .filter(([k]) => k !== "content")
+    .map(([k, v]) => `${k}=${v.length > 60 ? v.substring(0, 60) + "…" : v}`)
+    .join(" ");
+
+  return (
+    <div className="rounded bg-background/50 text-[10px] overflow-hidden">
+      <div
+        className="flex items-center gap-1 p-1.5 cursor-pointer hover:bg-background/80 transition-colors select-none"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <ChevronRight
+          className={`h-3 w-3 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
+        />
+        <FileText className="h-3 w-3 shrink-0" />
+        <Badge variant="outline" className="text-[9px] px-1 py-0 shrink-0">
+          {call.name}
+        </Badge>
+        {!expanded && (
+          <span className="font-mono text-muted-foreground truncate">{argPreview}</span>
+        )}
+        <button
+          onClick={handleCopy}
+          className="ml-auto shrink-0 p-0.5 rounded hover:bg-muted transition-colors"
+          title="Copy to clipboard"
+        >
+          {copied ? (
+            <Check className="h-3 w-3 text-green-500" />
+          ) : (
+            <Copy className="h-3 w-3 text-muted-foreground" />
+          )}
+        </button>
+      </div>
+      {expanded && (
+        <div className="border-t border-border/30 px-1.5 pb-1.5">
+          {Object.entries(call.args).map(([k, v]) => (
+            <div key={k} className="mt-1">
+              <span className="text-[9px] font-medium text-muted-foreground">{k}=</span>
+              <pre className="text-[9px] text-muted-foreground whitespace-pre-wrap break-all ml-2">
+                {v}
+              </pre>
+            </div>
+          ))}
+          {call.result && (
+            <pre className="mt-1 pt-1 border-t border-border/20 text-[9px] text-muted-foreground whitespace-pre-wrap break-all max-h-60 overflow-auto">
+              {call.result}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TunerBubble({ message }: { message: TunerMessage }) {
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
@@ -328,27 +404,7 @@ function TunerBubble({ message }: { message: TunerMessage }) {
         {message.toolCalls && message.toolCalls.length > 0 && (
           <div className="mt-2 space-y-1 border-t border-border/50 pt-2">
             {message.toolCalls.map((call, i) => (
-              <div key={i} className="rounded bg-background/50 p-1.5 text-[10px]">
-                <div className="flex items-center gap-1 flex-wrap">
-                  <FileText className="h-3 w-3 shrink-0" />
-                  <Badge variant="outline" className="text-[9px] px-1 py-0 shrink-0">
-                    {call.name}
-                  </Badge>
-                  {Object.entries(call.args)
-                    .filter(([k]) => k !== "content")
-                    .map(([k, v]) => (
-                      <span key={k} className="font-mono text-muted-foreground truncate">
-                        {k}={v.length > 60 ? v.substring(0, 60) + "…" : v}
-                      </span>
-                    ))}
-                </div>
-                {call.result && (
-                  <pre className="mt-1 max-h-20 overflow-auto text-[9px] text-muted-foreground whitespace-pre-wrap">
-                    {call.result.substring(0, 400)}
-                    {call.result.length > 400 ? "..." : ""}
-                  </pre>
-                )}
-              </div>
+              <ToolCallBlock key={i} call={call} />
             ))}
           </div>
         )}
@@ -495,6 +551,57 @@ async function executeToolCall(
           `${r.displayName || r.name}: ${r.path || ""}`
         )
         .join("\n");
+    }
+    case "list_prompts": {
+      const subdir = args.directory || args.path || "";
+      const activeSet = useAppStore.getState().activePromptSet;
+      // Resolve the active prompt set base path
+      const resolveRes = await fetch(`/api/files/resolve-prompt-set?name=${encodeURIComponent(activeSet)}`);
+      if (!resolveRes.ok) return "Error: Could not resolve prompt set path";
+      const { basePath } = await resolveRes.json();
+      const targetDir = subdir ? `${basePath}/${subdir}`.replace(/\\/g, "/") : basePath;
+
+      // Recursive listing helper (up to 2 levels deep for manageable output)
+      type Child = { name: string; path: string; type: string };
+      const listDir = async (dir: string): Promise<Child[]> => {
+        const res = await fetch(`/api/files/children?path=${encodeURIComponent(dir)}&limit=200`);
+        if (!res.ok) return [];
+        const data = await res.json();
+        return (data.children || []) as Child[];
+      };
+
+      const topLevel = await listDir(targetDir);
+      const lines: string[] = [`Prompt set: ${activeSet || "Original Prompts"}`, `Base path: ${basePath}`, ""];
+
+      for (const item of topLevel) {
+        if (item.type === "directory") {
+          lines.push(`${item.name}/`);
+          // List one level deeper for directories
+          const subItems = await listDir(item.path);
+          for (const sub of subItems) {
+            if (sub.type === "directory") {
+              lines.push(`  ${sub.name}/  (directory — use list_prompts with directory="${subdir ? subdir + "/" : ""}${item.name}/${sub.name}" to explore)`);
+            } else {
+              lines.push(`  ${sub.name}  →  ${sub.path}`);
+            }
+          }
+        } else {
+          lines.push(`${item.name}  →  ${item.path}`);
+        }
+      }
+
+      return lines.join("\n") || "No files found in this directory";
+    }
+    case "search_prompts": {
+      const query = args.query || Object.values(args)[0] || "";
+      const activeSet = useAppStore.getState().activePromptSet;
+      const res = await fetch(`/api/files/search?q=${encodeURIComponent(query.trim())}&activeSet=${encodeURIComponent(activeSet)}`);
+      const data = await res.json();
+      return (data.results || [])
+        .map((r: { displayName?: string; name: string; path?: string }) =>
+          `${r.displayName || r.name}: ${r.path || ""}`
+        )
+        .join("\n") || "No files found";
     }
     default:
       return `Unknown tool: ${name}`;

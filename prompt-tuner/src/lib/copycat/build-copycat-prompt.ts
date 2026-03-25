@@ -2,6 +2,7 @@ import type { ChatMessage } from "@/types/llm";
 import type { AiTuningSettings } from "@/types/config";
 import type { TuningTarget } from "@/types/autotuner";
 import type { CopycatRound, CopycatDialogueTurn } from "@/types/copycat";
+import { buildPipelineGuide } from "@/lib/autotuner/build-proposal-prompt";
 
 const SETTINGS_DESCRIPTIONS: Record<keyof AiTuningSettings, string> = {
   temperature: "Controls randomness. Lower = more deterministic, higher = more creative. Range: 0.0-2.0",
@@ -64,14 +65,20 @@ ${Object.entries(currentSettings)
 You may propose changes to any UNLOCKED settings.${lockedSettings.length > 0 ? ` Do NOT propose changes to locked settings: ${lockedSettings.join(", ")}.` : ""}`
     : "";
 
-  // Build prompts section
+  // Build prompts section with pipeline architecture guide
   let promptsSection = "";
   if (canModifyPrompts) {
     if (promptContent) {
-      promptsSection = `## Current Prompt Files
+      const pipelineGuide = buildPipelineGuide("default");
+      promptsSection = `## Prompt Pipeline Architecture
+
+${pipelineGuide}
+
+## Current Prompt Files
 
 The following prompt files are used by this agent. You can propose search/replace changes to modify them.
-**IMPORTANT:** The file_path in each section header is the exact path you must use in your prompt_changes proposals. Copy it exactly.
+You can also **create new submodule files** by using an empty \`search_text\` and providing the full file content in \`replace_text\` with a \`file_path\` for the new file. Use numbered naming (e.g. \`0015_\`, \`0550_\`) to control load order.
+**IMPORTANT:** The file_path in each section header is the exact path you must use in your prompt_changes proposals. Copy it exactly. For new files, construct the path using the same base directory as existing files in that submodule.
 
 ${promptContent}`;
     } else {
@@ -169,14 +176,22 @@ Focus on STYLE matching, not absolute quality. Prioritize **substantive** differ
 4. **NEVER spend a round on surface formatting.** If the only remaining differences are punctuation style, spacing, or minor formatting conventions, consider the job done — set stop_tuning to true. These are not worth tuning.
 5. **Stop when matched.** If the target closely matches the reference on substance (score >= 85), set stop_tuning to true.
 6. **Know your limits.** If style differences can't be fixed with your available levers, set stop_tuning to true and explain.
-${canModifyPrompts ? `7. **For prompt changes: prefer adding over replacing.** The existing prompt files contain carefully crafted instructions tested across thousands of SkyrimNet NPC dialogues. Your default approach should be:
+${canModifyPrompts ? `7. **Choose the RIGHT file to edit.** Use the Pipeline Architecture guide above. The entry-point template (e.g. \`dialogue_response.prompt\`) is mostly structural scaffolding with template syntax — it is rarely the right place to edit. Instead:
+   - For behavior/roleplay/voice changes → edit files in \`submodules/guidelines/\`
+   - For response format/length → edit \`guidelines/0900_response_format.prompt\` or \`system_head/0020_format_rules.prompt\`
+   - For world-building/tone → edit \`system_head/0010_setting.prompt\`
+   - For new rules that don't fit existing files → **create a new submodule file** with an appropriate number
+   - For final-turn instructions → edit or create files in \`submodules/user_final_instructions/\`
+   - Only edit entry-point templates if you need to change the structural assembly itself (very rare)
+8. **For prompt changes: prefer adding over replacing.** The existing prompt files contain carefully crafted instructions tested across thousands of SkyrimNet NPC dialogues. Your default approach should be:
    - ADD new paragraphs or instructions after existing content
    - Make surgical wording changes to existing lines when a specific phrase is causing the problem
    - Only replace or rewrite a section if it directly conflicts with the style you're trying to achieve and a smaller edit won't fix it — and even then, preserve as much of the original intent as possible
    - Your \`search_text\` should be a SHORT, specific portion where possible; avoid replacing entire files or large blocks unnecessarily
-8. **Prompt changes must be universal.** These prompts are used for THOUSANDS of different NPC dialogues across all of Skyrim — guards, merchants, innkeepers, quest characters, companions, etc. Proposed changes must improve dialogue quality for ANY NPC in ANY context. NEVER propose changes that are specific to the current test scenario (e.g., "don't mention Dragonstone", "always reference fire magic", "avoid dungeon locations"). Test your proposed instruction mentally: would it help a blacksmith AND a jarl AND a bard? If not, don't propose it.
-9. **Prompt changes are persistent.** Changes you make in one round carry forward to the next. The target model runs with the modified prompts each round.
-10. **Prefer prompt changes for style issues.** Settings like temperature/maxTokens control randomness and length, but prompt instructions are the most effective lever for controlling response style, personality expression, and dialogue habits.
+   - To **create a new file**, use an empty \`search_text\` ("") and put the full file content in \`replace_text\`
+9. **Prompt changes must be universal.** These prompts are used for THOUSANDS of different NPC dialogues across all of Skyrim — guards, merchants, innkeepers, quest characters, companions, etc. Proposed changes must improve dialogue quality for ANY NPC in ANY context. NEVER propose changes that are specific to the current test scenario (e.g., "don't mention Dragonstone", "always reference fire magic", "avoid dungeon locations"). Test your proposed instruction mentally: would it help a blacksmith AND a jarl AND a bard? If not, don't propose it.
+10. **Prompt changes are persistent.** Changes you make in one round carry forward to the next. The target model runs with the modified prompts each round.
+11. **Prefer prompt changes for style issues.** Settings like temperature/maxTokens control randomness and length, but prompt instructions are the most effective lever for controlling response style, personality expression, and dialogue habits.
 
 ## SkyrimNet Template Syntax (Inja)
 
@@ -207,7 +222,8 @@ Respond with a JSON object (no markdown fences):
     { "parameter": "temperature", "old_value": 1.0, "new_value": 0.8, "reason": "reduce creativity to match reference's more measured tone" }
   ]${canModifyPrompts ? `,
   "prompt_changes": [
-    { "file_path": "exact/path/from/section/header", "search_text": "exact text to find in file", "replace_text": "replacement text", "reason": "why this change helps" }
+    { "file_path": "exact/path/from/section/header", "search_text": "exact text to find in file", "replace_text": "replacement text", "reason": "why this change helps" },
+    { "file_path": "path/to/new_file.prompt", "search_text": "", "replace_text": "full file content", "reason": "creating new submodule" }
   ]` : ""},
   "verification_requests": ["custom dialogue line to test"]
 }
