@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useScenePresetStore } from "@/stores/scenePresetStore";
 import { useSimulationStore } from "@/stores/simulationStore";
 import type { ScenePreset } from "@/types/simulation";
 import { resolveNpcsIfNeeded } from "@/lib/npc/resolve-npc";
-import { Copy, Save, Trash2, Lock } from "lucide-react";
+import { exportScenePreset, parsePresetFile } from "@/lib/simulation/scene-preset-io";
+import { Copy, Save, Trash2, Lock, Download, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 async function applyPresetToSimulation(preset: ScenePreset) {
@@ -35,6 +36,7 @@ let globalInitialApplied = false;
 export function ScenePresetManager() {
   const [showSave, setShowSave] = useState(false);
   const [saveName, setSaveName] = useState("");
+  const importRef = useRef<HTMLInputElement>(null);
 
   const presets = useScenePresetStore((s) => s.presets);
   const activePresetId = useScenePresetStore((s) => s.activePresetId);
@@ -130,6 +132,36 @@ export function ScenePresetManager() {
     toast.success(`Scene preset "${preset.name}" deleted`);
   };
 
+  const handleExport = () => {
+    const preset = getPreset(activePresetId);
+    if (!preset) return;
+    exportScenePreset(preset);
+    toast.success(`Exported "${preset.name}"`);
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    const result = await parsePresetFile(file);
+    if (!result.valid) {
+      toast.error("Import failed", { description: result.error });
+      return;
+    }
+
+    for (const preset of result.presets) {
+      addPreset(preset.name, preset.scene, preset.npcs, actionRegistry, preset.player);
+    }
+
+    // Apply the last imported preset
+    const newState = useScenePresetStore.getState();
+    const latest = newState.getPreset(newState.activePresetId);
+    if (latest) applyPresetToSimulation(latest);
+
+    toast.success(`Imported ${result.presets.length} preset${result.presets.length !== 1 ? "s" : ""}`);
+  };
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5">
@@ -158,6 +190,31 @@ export function ScenePresetManager() {
         >
           <Copy className="h-3 w-3" />
         </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 shrink-0"
+          onClick={handleExport}
+          title="Export preset to file"
+        >
+          <Download className="h-3 w-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 shrink-0"
+          onClick={() => importRef.current?.click()}
+          title="Import preset from file"
+        >
+          <Upload className="h-3 w-3" />
+        </Button>
+        <input
+          ref={importRef}
+          type="file"
+          accept=".json"
+          className="hidden"
+          onChange={handleImport}
+        />
         <Button
           variant="ghost"
           size="icon"

@@ -48,8 +48,9 @@ export function ProfileManager() {
       SKYRIMNET_AGENTS.map((agent) => [agent, slots[agent]])
     ) as Record<SkyrimNetAgentType, ModelSlot>;
 
-    addProfile(name, globalApiKey, skyrimSlots);
-    toast.success(`Profile "${name}" saved`);
+    const newProfile = addProfile(name, globalApiKey, skyrimSlots);
+    setActiveProfileId(newProfile.id);
+    toast.success(`Profile "${name}" saved and activated`);
     setSaveName("");
     setShowSave(false);
   };

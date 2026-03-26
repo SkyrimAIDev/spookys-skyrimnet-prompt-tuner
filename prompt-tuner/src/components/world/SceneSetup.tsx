@@ -48,6 +48,7 @@ export function SceneSetup() {
     scenePrompt: true,
     npcs: true,
   });
+  const [genDescription, setGenDescription] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
 
   const toggleField = useCallback((field: AutoGenFieldKey) => {
@@ -149,12 +150,20 @@ Guidelines:
       ];
       const hint = locationHints[Math.floor(Math.random() * locationHints.length)];
 
+      // Build user message: use description if provided, otherwise use a random location hint
+      let userContent = "Generate a Skyrim scene.";
+      if (genDescription.trim()) {
+        userContent = `Generate a Skyrim scene based on this description: ${genDescription.trim()}`;
+      } else if (autoGenFields.location) {
+        userContent += ` Location idea: ${hint}`;
+      }
+
       const messages: ChatMessage[] = [
         { role: "system", content: systemPrompt },
-        { role: "user", content: `Generate a Skyrim scene.${autoGenFields.location ? ` Location idea: ${hint}` : ""}` },
+        { role: "user", content: userContent },
       ];
 
-      const log = await sendLlmRequest({ messages, agent: "meta_eval" });
+      const log = await sendLlmRequest({ messages, agent: "tuner" });
       addLlmCall(log);
 
       if (log.error) {
@@ -253,7 +262,7 @@ Guidelines:
     } finally {
       setIsGenerating(false);
     }
-  }, [autoGenFields, scene, selectedNpcs, setScene, addNpc, removeNpc, addLlmCall]);
+  }, [autoGenFields, genDescription, scene, selectedNpcs, setScene, addNpc, removeNpc, addLlmCall]);
 
   const hasSceneData = scene.location || scene.worldPrompt || scene.scenePrompt;
 
@@ -346,6 +355,19 @@ Guidelines:
                   )
                 )}
               </div>
+              <Input
+                value={genDescription}
+                onChange={(e) => setGenDescription(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !isGenerating) {
+                    e.preventDefault();
+                    handleGenerate();
+                  }
+                }}
+                placeholder="Scene description (optional)..."
+                className="h-6 text-xs"
+                disabled={isGenerating}
+              />
               <Button
                 size="sm"
                 className="w-full h-6 text-xs gap-1.5"
