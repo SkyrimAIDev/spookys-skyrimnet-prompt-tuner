@@ -248,5 +248,67 @@ function findSearchMatch(
     if (normCiMatch) return { index: normCiMatch.index, length: normCiMatch[0].length };
   }
 
+  // 7. Line-anchor matching: find the first distinctive line of search text in the content,
+  //    then match a block of the same line count from that position.
+  //    This handles cases where the LLM slightly rephrases middle/end lines.
+  const searchLines = searchText.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (searchLines.length >= 1) {
+    const contentLines = content.split("\n");
+    // Find the first search line that's distinctive enough (>15 chars, not just punctuation/template)
+    const anchorLine = searchLines.find((l) => l.length > 15 && !/^[{%#\s}]+$/.test(l))
+      || searchLines[0];
+    const anchorNorm = normalizeQuotes(anchorLine.toLowerCase());
+
+    for (let ci = 0; ci < contentLines.length; ci++) {
+      const contentLineNorm = normalizeQuotes(contentLines[ci].trim().toLowerCase());
+      if (contentLineNorm.includes(anchorNorm) || anchorNorm.includes(contentLineNorm)) {
+        // Found anchor — calculate the block range in the original content
+        const blockStart = content.indexOf(contentLines[ci]);
+        if (blockStart === -1) continue;
+        // Take as many lines as the search text had
+        const blockEndLine = Math.min(ci + searchLines.length, contentLines.length);
+        const blockEnd = contentLines.slice(0, blockEndLine).join("\n").length;
+        const blockLength = blockEnd - blockStart;
+        if (blockLength > 0) {
+          return { index: blockStart, length: blockLength };
+        }
+      }
+    }
+  }
+
+  // 8. Containment: if the search text (trimmed) is contained in the content when
+  //    we collapse all whitespace to single spaces, match on that.
+  const collapsedContent = content.replace(/\s+/g, " ");
+  const collapsedSearch = searchText.trim().replace(/\s+/g, " ");
+  if (collapsedSearch.length > 20) {
+    const collapsedIdx = collapsedContent.toLowerCase().indexOf(collapsedSearch.toLowerCase());
+    if (collapsedIdx !== -1) {
+      // Map back to the original content position.
+      // Find the nth non-whitespace character position in original.
+      let origStart = 0;
+      let collapsed = 0;
+      while (collapsed < collapsedIdx && origStart < content.length) {
+        if (/\s/.test(content[origStart]) && /\s/.test(content[origStart - 1] || "")) {
+          origStart++;
+          continue;
+        }
+        origStart++;
+        collapsed++;
+      }
+      // Find the end similarly
+      let origEnd = origStart;
+      let matchLen = 0;
+      while (matchLen < collapsedSearch.length && origEnd < content.length) {
+        if (/\s/.test(content[origEnd]) && /\s/.test(content[origEnd - 1] || "")) {
+          origEnd++;
+          continue;
+        }
+        origEnd++;
+        matchLen++;
+      }
+      return { index: origStart, length: origEnd - origStart };
+    }
+  }
+
   return null;
 }

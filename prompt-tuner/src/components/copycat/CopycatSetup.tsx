@@ -154,7 +154,8 @@ export function CopycatSetup() {
     });
   };
 
-  const canRun = referenceModelId.trim() && targetModelId.trim() && !isRunning;
+  const needsCustomPrompts = showPromptEditing && promptEditingMode === "custom" && customPromptPaths.length === 0;
+  const canRun = referenceModelId.trim() && targetModelId.trim() && !isRunning && !needsCustomPrompts;
 
   const handleCopyFromProfile = (profileId: string) => {
     const profile = profiles.find((p) => p.id === profileId);
@@ -424,6 +425,20 @@ export function CopycatSetup() {
                 </option>
               ))}
             </select>
+
+            {/* Narration toggle */}
+            <div className="px-1">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isNarrationEnabled}
+                  onChange={(e) => setIsNarrationEnabled(e.target.checked)}
+                  className="h-3 w-3"
+                  disabled={isRunning}
+                />
+                <span className="text-[10px] text-muted-foreground">Enable Narration</span>
+              </label>
+            </div>
           </div>
 
           <Separator />
@@ -642,24 +657,6 @@ export function CopycatSetup() {
                 )}
               </div>
             )}
-          </div>
-
-          <Separator />
-
-          {/* Narration toggle */}
-          <div className="px-1">
-            <label className="flex items-center gap-2 rounded px-2 py-1.5 text-xs cursor-pointer hover:bg-accent/50">
-              <input
-                type="checkbox"
-                checked={isNarrationEnabled}
-                onChange={(e) => setIsNarrationEnabled(e.target.checked)}
-                className="h-3 w-3"
-                disabled={isRunning}
-              />
-              <span className={isNarrationEnabled ? "font-medium" : "text-muted-foreground"}>
-                Enable Narration
-              </span>
-            </label>
           </div>
 
           <Separator />

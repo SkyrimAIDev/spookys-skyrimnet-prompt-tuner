@@ -288,7 +288,6 @@ export function PromptPickerDialog({
             size="sm"
             className="h-7 text-xs"
             onClick={handleConfirm}
-            disabled={selected.size === 0}
           >
             Confirm ({selected.size})
           </Button>

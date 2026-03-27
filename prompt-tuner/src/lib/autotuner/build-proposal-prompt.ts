@@ -157,7 +157,7 @@ export function buildPromptEditingRules(category: BenchmarkCategory, mode: impor
   const newLocation = NEW_PROMPT_LOCATIONS[category];
 
   // Common rules for all modes
-  const commonRules = `9. **When modifying existing files:** Your \`search_text\` must be a SHORT, specific portion of plain-text content — never replace entire files or large blocks. Preserve all template syntax, section markers, and conditional branches exactly as they are. Only modify the natural-language instruction text between template blocks.
+  const commonRules = `9. **When modifying existing files:** Your \`search_text\` must be COPIED EXACTLY from the file content shown above — do NOT paraphrase, reword, or reconstruct from memory. Copy a short, unique portion of the text you want to replace (1-3 lines is ideal). The search must match the file verbatim, including punctuation, dashes, and line breaks. Never replace entire files or large blocks. Preserve all template syntax, section markers, and conditional branches exactly as they are.
 10. **Prompt changes must be universal.** These prompts are used for THOUSANDS of different NPC dialogues across all of Skyrim — guards, merchants, innkeepers, quest characters, companions, etc. Proposed changes must improve quality for ANY NPC in ANY context. NEVER propose changes specific to the current benchmark scenario.
 11. **Keep additions concise.** SkyrimNet has a default max context of 4096 tokens. The official docs warn: "Too many rules = more hallucinations." Add the minimum instruction needed. A single clear sentence beats a paragraph of explanation.`;
 
