@@ -1,9 +1,12 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useAutoTunerStore } from "@/stores/autoTunerStore";
 import { ProposalDisplay } from "@/components/shared/ProposalDisplay";
+import { sendLlmRequest } from "@/lib/llm/client";
 import type { TunerPhase, TunerRound } from "@/types/autotuner";
 import {
   CheckCircle2,
@@ -12,8 +15,9 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronRight,
+  Send,
+  MessageSquare,
 } from "lucide-react";
-import { useState } from "react";
 import type { ChatMessage } from "@/types/llm";
 
 /**
@@ -81,6 +85,73 @@ function PhaseIcon({ phase }: { phase: TunerPhase }) {
   }
 }
 
+function PostTuningChatInput() {
+  const [input, setInput] = useState("");
+  const isStreaming = useAutoTunerStore((s) => s.isPostTuningStreaming);
+
+  const handleSend = useCallback(async () => {
+    const text = input.trim();
+    if (!text || isStreaming) return;
+    setInput("");
+
+    const state = useAutoTunerStore.getState();
+    state.addPostTuningMessage({ role: "user", content: text });
+    state.setIsPostTuningStreaming(true);
+    state.clearPostTuningStream();
+
+    const rounds = state.rounds;
+    const summary = state.sessionSummary;
+    const allPrior = state.postTuningMessages;
+
+    const systemMsg = `You are the SkyrimNet tuner agent that just completed a tuning session. The user wants to ask questions about the session or request further guidance.
+
+## Session Summary
+${summary || "No summary available."}
+
+## Session Details
+${rounds.map((r) => `Round ${r.roundNumber}: ${r.proposal?.reasoning || "N/A"}`).join("\n")}
+
+Answer concisely. Reference specific rounds and changes when relevant.`;
+
+    const messages = [
+      { role: "system" as const, content: systemMsg },
+      ...allPrior.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      { role: "user" as const, content: text },
+    ];
+
+    try {
+      const log = await sendLlmRequest({
+        messages,
+        agent: "tuner",
+        onChunk: (chunk) => { useAutoTunerStore.getState().appendPostTuningStream(chunk); },
+      });
+      if (!log.error) {
+        useAutoTunerStore.getState().addPostTuningMessage({ role: "assistant", content: log.response });
+      }
+    } catch { /* non-critical */ }
+    finally {
+      useAutoTunerStore.getState().setIsPostTuningStreaming(false);
+      useAutoTunerStore.getState().clearPostTuningStream();
+    }
+  }, [input, isStreaming]);
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <Input
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+        placeholder="Ask about the session..."
+        className="h-7 text-xs flex-1"
+        disabled={isStreaming}
+      />
+      <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={handleSend} disabled={!input.trim() || isStreaming}>
+        {isStreaming ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+      </Button>
+    </div>
+  );
+}
+
 export function AutoTunerCenter() {
   const phase = useAutoTunerStore((s) => s.phase);
   const currentRound = useAutoTunerStore((s) => s.currentRound);
@@ -91,6 +162,10 @@ export function AutoTunerCenter() {
   const proposalStream = useAutoTunerStore((s) => s.proposalStream);
   const isRunning = useAutoTunerStore((s) => s.isRunning);
   const statusMessage = useAutoTunerStore((s) => s.statusMessage);
+  const sessionSummary = useAutoTunerStore((s) => s.sessionSummary);
+  const summaryStream = useAutoTunerStore((s) => s.summaryStream);
+  const postTuningMessages = useAutoTunerStore((s) => s.postTuningMessages);
+  const postTuningStream = useAutoTunerStore((s) => s.postTuningStream);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -144,6 +219,59 @@ export function AutoTunerCenter() {
               statusMessage={idx === rounds.length - 1 && isRunning ? statusMessage : ""}
             />
           ))}
+
+          {/* Session Summary — appears after all rounds */}
+          {(sessionSummary || summaryStream) && (
+            <div className="rounded-lg border bg-card overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 border-b">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                <span className="text-xs font-medium text-emerald-400">Session Summary</span>
+              </div>
+              <div className="px-4 py-3 text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">
+                {sessionSummary || summaryStream}
+                {!sessionSummary && summaryStream && (
+                  <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Post-Tuning Chat — appears after summary */}
+          {phase === "complete" && !isRunning && (
+            <div className="rounded-lg border bg-card overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-2 border-b">
+                <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs font-medium">Ask the Tuner</span>
+              </div>
+              <div className="p-3 space-y-2">
+                {postTuningMessages.map((msg, i) => (
+                  <div
+                    key={i}
+                    className={`text-xs rounded-md px-3 py-2 ${
+                      msg.role === "user"
+                        ? "bg-primary/10 border border-primary/20 ml-8"
+                        : "bg-muted/50 border border-muted mr-8"
+                    }`}
+                  >
+                    <div className="text-[9px] text-muted-foreground mb-0.5 font-medium">
+                      {msg.role === "user" ? "You" : "Tuner"}
+                    </div>
+                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                  </div>
+                ))}
+                {postTuningStream && (
+                  <div className="text-xs rounded-md px-3 py-2 bg-muted/50 border border-muted mr-8">
+                    <div className="text-[9px] text-muted-foreground mb-0.5 font-medium">Tuner</div>
+                    <div className="whitespace-pre-wrap">
+                      {postTuningStream}
+                      <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
+                    </div>
+                  </div>
+                )}
+                <PostTuningChatInput />
+              </div>
+            </div>
+          )}
         </div>
       </ScrollArea>
     </div>
