@@ -16,6 +16,7 @@ import { ScenarioSelector } from "@/components/shared/ScenarioSelector";
 import type { BenchmarkCategory } from "@/types/benchmark";
 import type { TuningTarget, PromptEditingMode } from "@/types/autotuner";
 import { RECOMMENDED_PROMPTS } from "@/lib/autotuner/prompt-editing-modes";
+import { PromptPickerDialog } from "@/components/shared/PromptPickerDialog";
 import type { AiTuningSettings } from "@/types/config";
 import {
   MessageSquare,
@@ -101,6 +102,7 @@ export function AutoTunerSetup() {
   const [customDialogOpen, setCustomDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<BenchmarkCategory | null>(null);
   const [settingsExpanded, setSettingsExpanded] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/export/list-sets")
@@ -383,7 +385,7 @@ export function AutoTunerSetup() {
                       variant="outline"
                       size="sm"
                       className="w-full h-6 text-[10px]"
-                      onClick={() => {/* TODO: open picker dialog */}}
+                      onClick={() => setPickerOpen(true)}
                       disabled={isRunning}
                     >
                       Select Prompts ({customPromptPaths.length} selected)
@@ -565,6 +567,17 @@ export function AutoTunerSetup() {
         onOpenChange={setCustomDialogOpen}
         initialCategory={editingCategory || "dialogue"}
       />
+
+      {selectedCategory && (
+        <PromptPickerDialog
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          category={selectedCategory}
+          promptSetName={selectedPromptSet === "__active__" ? useAppStore.getState().activePromptSet || "" : selectedPromptSet}
+          selectedPaths={customPromptPaths}
+          onConfirm={setCustomPromptPaths}
+        />
+      )}
     </div>
   );
 }

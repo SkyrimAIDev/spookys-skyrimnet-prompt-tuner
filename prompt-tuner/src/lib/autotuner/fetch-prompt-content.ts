@@ -25,7 +25,7 @@ type Editability = "EDITABLE" | "EDIT_WITH_CARE" | "DO_NOT_EDIT";
 /**
  * Map file names → editability. Entries not listed default to EDIT_WITH_CARE.
  */
-const FILE_EDITABILITY: Record<string, Editability> = {
+export const FILE_EDITABILITY: Record<string, Editability> = {
   // ── SAFE to edit (mostly plain-text instructions) ──
   "0010_setting.prompt": "EDITABLE",
   "0500_roleplay_guidelines.prompt": "EDITABLE",
@@ -71,7 +71,7 @@ const EDITABILITY_LABELS: Record<Editability, string> = {
   DO_NOT_EDIT: "DO NOT EDIT — template scaffolding, read-only context",
 };
 
-const AGENT_PROMPT_PATHS: Record<string, string[]> = {
+export const AGENT_PROMPT_PATHS: Record<string, string[]> = {
   // dialogue_response.prompt renders: system_head (full), event_history,
   // user_final_instructions, character bio, scene context.
   // system_head/0020_format_rules.prompt internally calls
