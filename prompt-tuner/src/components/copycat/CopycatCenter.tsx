@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { useCopycatStore } from "@/stores/copycatStore";
 import { ProposalDisplay } from "@/components/shared/ProposalDisplay";
 import { sendLlmRequest } from "@/lib/llm/client";
+import { applySettingsChanges, applyPromptChanges } from "@/lib/autotuner/apply-changes";
+import { parseProposal } from "@/lib/autotuner/parse-proposal";
 import type { CopycatPhase, CopycatRound, CopycatDialogueTurn } from "@/types/copycat";
 import {
   CheckCircle2,
@@ -92,6 +94,58 @@ function CopycatCostNotice({ onDismiss }: { onDismiss: () => void }) {
   );
 }
 
+/**
+ * Try to extract and apply a changes JSON block from the copycat chat response.
+ */
+async function tryCopycatApplyChatChanges(response: string): Promise<string | null> {
+  let json: { settings_changes?: unknown[]; prompt_changes?: unknown[] } | null = null;
+  try {
+    const jsonMatch = response.match(/\{[\s\S]*?"(?:settings_changes|prompt_changes)"[\s\S]*?\}/);
+    if (jsonMatch) json = JSON.parse(jsonMatch[0]);
+  } catch {
+    try {
+      const proposal = parseProposal(response);
+      if (proposal.settingsChanges.length > 0 || proposal.promptChanges.length > 0) {
+        json = {
+          settings_changes: proposal.settingsChanges.map((c) => ({ parameter: c.parameter, old_value: c.oldValue, new_value: c.newValue, reason: c.reason })),
+          prompt_changes: proposal.promptChanges.map((c) => ({ file_path: c.filePath, search_text: c.searchText, replace_text: c.replaceText, reason: c.reason })),
+        };
+      }
+    } catch { /* not a proposal */ }
+  }
+  if (!json) return null;
+
+  const applied: string[] = [];
+  const store = useCopycatStore.getState();
+
+  if (json.settings_changes && Array.isArray(json.settings_changes) && json.settings_changes.length > 0 && store.workingSettings) {
+    try {
+      const parsed = parseProposal(JSON.stringify({ settings_changes: json.settings_changes, prompt_changes: [], reasoning: "chat", stop_tuning: false }));
+      if (parsed.settingsChanges.length > 0) {
+        const newSettings = applySettingsChanges(store.workingSettings, parsed.settingsChanges);
+        store.setWorkingSettings(newSettings);
+        applied.push(`${parsed.settingsChanges.length} setting${parsed.settingsChanges.length !== 1 ? "s" : ""} updated`);
+      }
+    } catch { /* skip */ }
+  }
+
+  if (json.prompt_changes && Array.isArray(json.prompt_changes) && json.prompt_changes.length > 0) {
+    try {
+      const parsed = parseProposal(JSON.stringify({ settings_changes: [], prompt_changes: json.prompt_changes, reasoning: "chat", stop_tuning: false }));
+      if (parsed.promptChanges.length > 0) {
+        const sourceSetName = store.selectedPromptSet || undefined;
+        const appliedPrompts = await applyPromptChanges(parsed.promptChanges, sourceSetName);
+        const successCount = appliedPrompts.filter((c) => !c.reason?.startsWith("[SKIPPED]")).length;
+        if (successCount > 0) applied.push(`${successCount} prompt edit${successCount !== 1 ? "s" : ""} applied`);
+        const skipped = appliedPrompts.filter((c) => c.reason?.startsWith("[SKIPPED]"));
+        if (skipped.length > 0) applied.push(`${skipped.length} skipped`);
+      }
+    } catch { /* skip */ }
+  }
+
+  return applied.length > 0 ? applied.join(", ") : null;
+}
+
 function CopycatPostTuningChatInput() {
   const [input, setInput] = useState("");
   const isStreaming = useCopycatStore((s) => s.isPostTuningStreaming);
@@ -109,16 +163,42 @@ function CopycatPostTuningChatInput() {
     const rounds = state.rounds;
     const summary = state.sessionSummary;
     const allPrior = state.postTuningMessages;
+    const currentSettings = state.workingSettings;
 
-    const systemMsg = `You are the SkyrimNet copycat tuner agent that just completed a style-matching session. The user wants to ask questions about the session or request further guidance.
+    const settingsInfo = currentSettings
+      ? Object.entries(currentSettings).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join("\n")
+      : "No settings available.";
+
+    const systemMsg = `You are the SkyrimNet copycat tuner agent that just completed a style-matching session. You can answer questions AND make changes.
+
+## Your Capabilities
+- **Answer questions** about the session, explain reasoning, discuss trade-offs
+- **Modify settings** by including a JSON block with \`settings_changes\`
+- **Edit prompts** by including a JSON block with \`prompt_changes\`
+
+When the user asks you to make changes, include a JSON block in your response:
+\`\`\`json
+{
+  "settings_changes": [
+    { "parameter": "temperature", "old_value": 1.8, "new_value": 1.6, "reason": "reduce randomness" }
+  ],
+  "prompt_changes": [
+    { "file_path": "/path/to/file.prompt", "search_text": "text to find", "replace_text": "replacement", "reason": "why" }
+  ]
+}
+\`\`\`
+
+Changes are applied immediately to the working session. The user can review and save them from the right panel.
+If you're just answering a question (no changes needed), respond normally without JSON.
+
+## Current Settings
+${settingsInfo}
 
 ## Session Summary
 ${summary || "No summary available."}
 
 ## Session Details
-${rounds.map((r) => `Round ${r.roundNumber} (${r.effectivenessScore ?? "?"}%): ${r.proposal?.reasoning || "N/A"}`).join("\n")}
-
-Answer concisely. Reference specific rounds and changes when relevant.`;
+${rounds.map((r) => `Round ${r.roundNumber} (${r.effectivenessScore ?? "?"}%): ${r.proposal?.reasoning || "N/A"}`).join("\n")}`;
 
     const messages = [
       { role: "system" as const, content: systemMsg },
@@ -134,6 +214,10 @@ Answer concisely. Reference specific rounds and changes when relevant.`;
       });
       if (!log.error) {
         useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: log.response });
+        const applyResult = await tryCopycatApplyChatChanges(log.response);
+        if (applyResult) {
+          useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: `Changes applied: ${applyResult}` });
+        }
       }
     } catch { /* non-critical */ }
     finally {
