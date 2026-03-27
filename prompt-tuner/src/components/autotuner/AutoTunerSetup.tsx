@@ -48,8 +48,9 @@ const TUNING_TARGET_OPTIONS: { value: TuningTarget; label: string; description: 
   { value: "both", label: "Both", description: "Tune both inference settings and prompt content" },
 ];
 
-const PROMPT_EDITING_MODE_OPTIONS: { value: PromptEditingMode; label: string; description: string }[] = [
+const PROMPT_EDITING_MODE_OPTIONS: { value: PromptEditingMode; label: string; description: string; dialogueOnly?: boolean }[] = [
   { value: "recommended", label: "Recommended", description: "Edit only the best prompts for this agent — safest and most effective" },
+  { value: "world_settings", label: "World Settings Only", description: "Only edit the world setting prompt (0010_setting.prompt)", dialogueOnly: true },
   { value: "new_prompt", label: "New Prompt", description: "Create a new prompt file instead of editing existing ones" },
   { value: "auto", label: "Auto", description: "Let the tuner decide which files to edit or whether to create new ones" },
   { value: "custom", label: "Custom", description: "Choose specific prompt files to edit" },
@@ -341,7 +342,7 @@ export function AutoTunerSetup() {
             {showPromptEditing && (
               <div className="space-y-1">
                 <div className="text-[10px] text-muted-foreground px-1">Prompt editing mode</div>
-                {PROMPT_EDITING_MODE_OPTIONS.map((opt) => {
+                {PROMPT_EDITING_MODE_OPTIONS.filter((opt) => !opt.dialogueOnly || selectedCategory === "dialogue").map((opt) => {
                   const isSelected = promptEditingMode === opt.value;
                   return (
                     <button
@@ -376,6 +377,11 @@ export function AutoTunerSetup() {
                     {RECOMMENDED_PROMPTS[selectedCategory]?.map((p) => (
                       <div key={p} className="truncate">• {p.split("/").pop()}</div>
                     ))}
+                  </div>
+                )}
+                {promptEditingMode === "world_settings" && (
+                  <div className="px-2 py-1 text-[9px] text-muted-foreground/70">
+                    • 0010_setting.prompt
                   </div>
                 )}
                 {/* Custom prompt selection */}

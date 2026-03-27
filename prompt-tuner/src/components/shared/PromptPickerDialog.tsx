@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -9,10 +9,11 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { AGENT_PROMPT_PATHS, FILE_EDITABILITY } from "@/lib/autotuner/fetch-prompt-content";
+import { AGENT_PROMPT_PATHS } from "@/lib/autotuner/fetch-prompt-content";
+import { RECOMMENDED_PROMPTS } from "@/lib/autotuner/prompt-editing-modes";
 import { getCategoryDef } from "@/lib/benchmark/categories";
 import type { BenchmarkCategory } from "@/types/benchmark";
-import { Loader2, FileText, FolderOpen } from "lucide-react";
+import { Loader2, FileText, FolderOpen, Star } from "lucide-react";
 
 interface PromptFileEntry {
   /** Relative path from prompt set base, e.g. "submodules/guidelines/0500_roleplay_guidelines.prompt" */
@@ -21,8 +22,6 @@ interface PromptFileEntry {
   name: string;
   /** Parent directory label, e.g. "submodules/guidelines" */
   group: string;
-  /** Editability tag */
-  editability: "EDITABLE" | "EDIT_WITH_CARE" | "DO_NOT_EDIT";
 }
 
 interface PromptPickerDialogProps {
@@ -33,18 +32,6 @@ interface PromptPickerDialogProps {
   selectedPaths: string[];
   onConfirm: (paths: string[]) => void;
 }
-
-const EDITABILITY_COLORS: Record<string, string> = {
-  EDITABLE: "text-green-400",
-  EDIT_WITH_CARE: "text-yellow-400",
-  DO_NOT_EDIT: "text-red-400/60",
-};
-
-const EDITABILITY_LABELS: Record<string, string> = {
-  EDITABLE: "Editable",
-  EDIT_WITH_CARE: "Edit with care",
-  DO_NOT_EDIT: "Read-only",
-};
 
 export function PromptPickerDialog({
   open,
@@ -57,6 +44,11 @@ export function PromptPickerDialog({
   const [files, setFiles] = useState<PromptFileEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set(selectedPaths));
+
+  const recommendedSet = useMemo(
+    () => new Set(RECOMMENDED_PROMPTS[category] || []),
+    [category],
+  );
 
   // Reset selection when dialog opens
   useEffect(() => {
@@ -83,49 +75,78 @@ export function PromptPickerDialog({
       }
       const { basePath } = await resolveResp.json();
 
+      // Also resolve the originals base path as fallback
+      let originalsBasePath: string | null = null;
+      if (promptSetName) {
+        try {
+          const originalsResp = await fetch(`/api/files/resolve-prompt-set?name=`);
+          if (originalsResp.ok) {
+            const data = await originalsResp.json();
+            originalsBasePath = data.basePath;
+          }
+        } catch { /* skip */ }
+      }
+
       const entries: PromptFileEntry[] = [];
 
       for (const entry of agentPaths) {
         const fullPath = `${basePath}/${entry}`.replace(/\\/g, "/");
+        const originalsPath = originalsBasePath
+          ? `${originalsBasePath}/${entry}`.replace(/\\/g, "/")
+          : null;
 
         if (entry.endsWith(".prompt")) {
           // Individual file
           const name = entry.split("/").pop() || entry;
           const group = entry.includes("/") ? entry.substring(0, entry.lastIndexOf("/")) : "(root)";
-          const editability = FILE_EDITABILITY[name] || "EDIT_WITH_CARE";
-          entries.push({ relativePath: entry, name, group, editability });
+          entries.push({ relativePath: entry, name, group });
         } else {
-          // Directory — list children
+          // Directory — list from active set, then merge missing files from originals
+          const seenNames = new Set<string>();
+
+          // List from active set first
           try {
             const resp = await fetch(
               `/api/files/children?path=${encodeURIComponent(fullPath)}&limit=50`
             );
-            if (!resp.ok) continue;
-            const data = await resp.json();
-            const children = (data.children || data.nodes || []) as { name: string; type: string }[];
-            for (const child of children) {
-              if (child.type !== "file" || !child.name.endsWith(".prompt")) continue;
-              const relativePath = `${entry}/${child.name}`;
-              const editability = FILE_EDITABILITY[child.name] || "EDIT_WITH_CARE";
-              entries.push({
-                relativePath,
-                name: child.name,
-                group: entry,
-                editability,
-              });
+            if (resp.ok) {
+              const data = await resp.json();
+              const children = (data.children || data.nodes || []) as { name: string; type: string }[];
+              for (const child of children) {
+                if (child.type !== "file" || !child.name.endsWith(".prompt")) continue;
+                seenNames.add(child.name);
+                entries.push({ relativePath: `${entry}/${child.name}`, name: child.name, group: entry });
+              }
             }
-          } catch {
-            // Skip inaccessible directories
+          } catch { /* skip */ }
+
+          // Fill in from originals for any files not in the active set
+          if (originalsPath) {
+            try {
+              const resp = await fetch(
+                `/api/files/children?path=${encodeURIComponent(originalsPath)}&limit=50`
+              );
+              if (resp.ok) {
+                const data = await resp.json();
+                const children = (data.children || data.nodes || []) as { name: string; type: string }[];
+                for (const child of children) {
+                  if (child.type !== "file" || !child.name.endsWith(".prompt")) continue;
+                  if (seenNames.has(child.name)) continue;
+                  entries.push({ relativePath: `${entry}/${child.name}`, name: child.name, group: entry });
+                }
+              }
+            } catch { /* skip */ }
           }
         }
       }
 
-      // Sort: editable first, then by group and name
+      // Sort: recommended first, then by group and name
+      const rec = RECOMMENDED_PROMPTS[category] || [];
+      const recSet = new Set(rec);
       entries.sort((a, b) => {
-        const editOrder = { EDITABLE: 0, EDIT_WITH_CARE: 1, DO_NOT_EDIT: 2 };
-        const ae = editOrder[a.editability] ?? 1;
-        const be = editOrder[b.editability] ?? 1;
-        if (ae !== be) return ae - be;
+        const aRec = recSet.has(a.relativePath) ? 0 : 1;
+        const bRec = recSet.has(b.relativePath) ? 0 : 1;
+        if (aRec !== bRec) return aRec - bRec;
         if (a.group !== b.group) return a.group.localeCompare(b.group);
         return a.name.localeCompare(b.name);
       });
@@ -155,14 +176,12 @@ export function PromptPickerDialog({
     });
   };
 
-  const selectAllEditable = () => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      for (const f of files) {
-        if (f.editability !== "DO_NOT_EDIT") next.add(f.relativePath);
-      }
-      return next;
-    });
+  const selectRecommended = () => {
+    setSelected(new Set(recommendedSet));
+  };
+
+  const selectAll = () => {
+    setSelected(new Set(files.map((f) => f.relativePath)));
   };
 
   const clearAll = () => setSelected(new Set());
@@ -197,8 +216,12 @@ export function PromptPickerDialog({
         ) : (
           <>
             <div className="flex items-center gap-2 text-[10px] text-muted-foreground px-1">
-              <button onClick={selectAllEditable} className="hover:text-foreground transition-colors underline">
-                Select all editable
+              <button onClick={selectRecommended} className="hover:text-foreground transition-colors underline">
+                Select recommended
+              </button>
+              <span>|</span>
+              <button onClick={selectAll} className="hover:text-foreground transition-colors underline">
+                Select all
               </button>
               <span>|</span>
               <button onClick={clearAll} className="hover:text-foreground transition-colors underline">
@@ -217,7 +240,7 @@ export function PromptPickerDialog({
                   <div className="space-y-0.5">
                     {groupFiles.map((f) => {
                       const isSelected = selected.has(f.relativePath);
-                      const isReadOnly = f.editability === "DO_NOT_EDIT";
+                      const isRecommended = recommendedSet.has(f.relativePath);
                       return (
                         <button
                           key={f.relativePath}
@@ -226,7 +249,7 @@ export function PromptPickerDialog({
                             isSelected
                               ? "bg-primary/10 border border-primary/30"
                               : "hover:bg-accent/50 border border-transparent"
-                          } ${isReadOnly ? "opacity-50" : ""}`}
+                          }`}
                         >
                           <input
                             type="checkbox"
@@ -236,9 +259,12 @@ export function PromptPickerDialog({
                           />
                           <FileText className="h-3 w-3 shrink-0 text-muted-foreground" />
                           <span className="truncate flex-1">{f.name}</span>
-                          <span className={`text-[9px] shrink-0 ${EDITABILITY_COLORS[f.editability]}`}>
-                            {EDITABILITY_LABELS[f.editability]}
-                          </span>
+                          {isRecommended && (
+                            <span className="flex items-center gap-0.5 text-[9px] text-amber-400 shrink-0">
+                              <Star className="h-2.5 w-2.5 fill-amber-400" />
+                              Recommended
+                            </span>
+                          )}
                         </button>
                       );
                     })}

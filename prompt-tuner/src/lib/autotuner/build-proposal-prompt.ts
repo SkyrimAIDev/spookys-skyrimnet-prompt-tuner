@@ -171,6 +171,18 @@ export function buildPromptEditingRules(category: BenchmarkCategory, mode: impor
     .filter(Boolean)
     .join("\n\n");
 
+  if (mode === "world_settings") {
+    const settingGuide = PROMPT_EDITING_GUIDES["0010_setting.prompt"] || "";
+    return `8. **ONLY edit the world setting prompt.** You may ONLY propose changes to \`0010_setting.prompt\` (the world setting file in \`submodules/system_head/\`). Do NOT create new files. Do NOT edit any other files under any circumstance.
+   This file defines the global world rules, tone, and atmosphere that shape how ALL NPCs behave. Add or modify setting descriptions that will improve dialogue quality across the entire world.
+
+${commonRules}
+
+## World Setting Editing Guide
+
+${settingGuide ? `#### \`0010_setting.prompt\`\n${settingGuide}` : "The world setting prompt is the primary user customization point. Add prose content after the header to define world rules, tone, and atmosphere."}`;
+  }
+
   if (mode === "recommended") {
     return `8. **ONLY edit the recommended prompts for this agent.** You may ONLY propose changes to these specific files:
 ${recommended.map((p) => `   - \`${p.split("/").pop()}\``).join("\n")}

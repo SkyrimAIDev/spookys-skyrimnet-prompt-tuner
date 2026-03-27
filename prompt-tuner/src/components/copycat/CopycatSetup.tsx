@@ -33,6 +33,7 @@ const TUNING_TARGET_OPTIONS: { value: TuningTarget; label: string; description: 
 
 const PROMPT_EDITING_MODE_OPTIONS: { value: PromptEditingMode; label: string; description: string }[] = [
   { value: "recommended", label: "Recommended", description: "Edit only the best prompts for this agent — safest and most effective" },
+  { value: "world_settings", label: "World Settings Only", description: "Only edit the world setting prompt (0010_setting.prompt)" },
   { value: "new_prompt", label: "New Prompt", description: "Create a new prompt file instead of editing existing ones" },
   { value: "auto", label: "Auto", description: "Let the tuner decide which files to edit or whether to create new ones" },
   { value: "custom", label: "Custom", description: "Choose specific prompt files to edit" },
@@ -531,6 +532,11 @@ export function CopycatSetup() {
                     {RECOMMENDED_PROMPTS.dialogue?.map((p) => (
                       <div key={p} className="truncate">• {p.split("/").pop()}</div>
                     ))}
+                  </div>
+                )}
+                {promptEditingMode === "world_settings" && (
+                  <div className="px-2 py-1 text-[9px] text-muted-foreground/70">
+                    • 0010_setting.prompt
                   </div>
                 )}
                 {promptEditingMode === "custom" && (

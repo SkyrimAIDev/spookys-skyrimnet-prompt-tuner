@@ -7,11 +7,12 @@ export type TuningTarget = "prompts" | "settings" | "both";
 /**
  * Controls which prompts the tuner is allowed to edit:
  * - recommended: only the best prompts for the current agent (default)
+ * - world_settings: only edit the world setting prompt (0010_setting.prompt)
  * - new_prompt: LLM creates a new prompt file only, no editing existing
  * - auto: LLM decides which files to edit or whether to create new ones
  * - custom: user-selected specific prompt files
  */
-export type PromptEditingMode = "recommended" | "new_prompt" | "auto" | "custom";
+export type PromptEditingMode = "recommended" | "world_settings" | "new_prompt" | "auto" | "custom";
 
 export type TunerPhase =
   | "idle"
