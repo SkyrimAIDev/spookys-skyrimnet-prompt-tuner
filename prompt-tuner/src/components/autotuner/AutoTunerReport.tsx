@@ -14,6 +14,8 @@ import { PromptSaveSection } from "@/components/shared/PromptSaveSection";
 import { SaveModeOption } from "@/components/shared/SaveModeOption";
 import type { AiTuningSettings } from "@/types/config";
 import type { TunerPhase } from "@/types/autotuner";
+import { sendLlmRequest } from "@/lib/llm/client";
+import { Input } from "@/components/ui/input";
 import {
   CheckCircle2,
   AlertCircle,
@@ -22,6 +24,8 @@ import {
   Trash2,
   Copy,
   Download,
+  Send,
+  MessageSquare,
 } from "lucide-react";
 
 const PHASE_LABELS: Record<TunerPhase, string> = {
@@ -36,6 +40,93 @@ const PHASE_LABELS: Record<TunerPhase, string> = {
   stopped: "Stopped",
 };
 
+function PostTuningChatInput() {
+  const [input, setInput] = useState("");
+  const isStreaming = useAutoTunerStore((s) => s.isPostTuningStreaming);
+  const store = useAutoTunerStore;
+
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || isStreaming) return;
+    setInput("");
+
+    const state = store.getState();
+    state.addPostTuningMessage({ role: "user", content: text });
+    state.setIsPostTuningStreaming(true);
+    state.clearPostTuningStream();
+
+    // Build context from session
+    const rounds = state.rounds;
+    const sessionSummary = state.sessionSummary;
+    const allPriorMessages = state.postTuningMessages;
+
+    const systemMsg = `You are the SkyrimNet tuner agent that just completed a tuning session. The user wants to ask you questions about the session or request further guidance.
+
+## Session Summary
+${sessionSummary || "No summary available."}
+
+## Session Details
+${rounds.map((r) => `Round ${r.roundNumber}: ${r.proposal?.reasoning || "N/A"}`).join("\n")}
+
+Answer concisely. If the user asks about specific changes, reference what happened in the rounds. If they ask for further changes, explain what they could try.`;
+
+    const messages = [
+      { role: "system" as const, content: systemMsg },
+      ...allPriorMessages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      { role: "user" as const, content: text },
+    ];
+
+    try {
+      const log = await sendLlmRequest({
+        messages,
+        agent: "tuner",
+        onChunk: (chunk) => {
+          store.getState().appendPostTuningStream(chunk);
+        },
+      });
+      if (!log.error) {
+        store.getState().addPostTuningMessage({ role: "assistant", content: log.response });
+      }
+    } catch {
+      // Non-critical
+    } finally {
+      store.getState().setIsPostTuningStreaming(false);
+      store.getState().clearPostTuningStream();
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 px-1">
+      <Input
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            handleSend();
+          }
+        }}
+        placeholder="Ask about the session..."
+        className="h-7 text-xs flex-1"
+        disabled={isStreaming}
+      />
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-7 w-7 shrink-0"
+        onClick={handleSend}
+        disabled={!input.trim() || isStreaming}
+      >
+        {isStreaming ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <Send className="h-3 w-3" />
+        )}
+      </Button>
+    </div>
+  );
+}
+
 export function AutoTunerReport() {
   const phase = useAutoTunerStore((s) => s.phase);
   const rounds = useAutoTunerStore((s) => s.rounds);
@@ -46,6 +137,10 @@ export function AutoTunerReport() {
   const selectedProfileId = useAutoTunerStore((s) => s.selectedProfileId);
   const workingPromptSet = useAutoTunerStore((s) => s.workingPromptSet);
   const tuningTarget = useAutoTunerStore((s) => s.tuningTarget);
+  const sessionSummary = useAutoTunerStore((s) => s.sessionSummary);
+  const summaryStream = useAutoTunerStore((s) => s.summaryStream);
+  const postTuningMessages = useAutoTunerStore((s) => s.postTuningMessages);
+  const postTuningStream = useAutoTunerStore((s) => s.postTuningStream);
 
   const profiles = useProfileStore((s) => s.profiles);
 
@@ -271,6 +366,66 @@ export function AutoTunerReport() {
               ))}
             </div>
           </div>
+
+          {/* Session Summary */}
+          {(sessionSummary || summaryStream) && (
+            <>
+              <Separator />
+              <div className="space-y-1.5">
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">
+                  Session Summary
+                </div>
+                <div className="px-1 text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed prose prose-invert prose-xs max-w-none [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_p]:text-xs [&_li]:text-xs [&_strong]:text-foreground">
+                  {sessionSummary || summaryStream}
+                  {!sessionSummary && summaryStream && (
+                    <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Post-Tuning Chat */}
+          {phase === "complete" && !isRunning && (
+            <>
+              <Separator />
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">
+                  <MessageSquare className="h-3 w-3" />
+                  Ask the Tuner
+                </div>
+                {postTuningMessages.length > 0 && (
+                  <div className="space-y-2 px-1">
+                    {postTuningMessages.map((msg, i) => (
+                      <div
+                        key={i}
+                        className={`text-xs rounded px-2 py-1.5 ${
+                          msg.role === "user"
+                            ? "bg-primary/10 border border-primary/20"
+                            : "bg-muted/50 border border-muted"
+                        }`}
+                      >
+                        <div className="text-[9px] text-muted-foreground mb-0.5">
+                          {msg.role === "user" ? "You" : "Tuner"}
+                        </div>
+                        <div className="whitespace-pre-wrap">{msg.content}</div>
+                      </div>
+                    ))}
+                    {postTuningStream && (
+                      <div className="text-xs rounded px-2 py-1.5 bg-muted/50 border border-muted">
+                        <div className="text-[9px] text-muted-foreground mb-0.5">Tuner</div>
+                        <div className="whitespace-pre-wrap">
+                          {postTuningStream}
+                          <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <PostTuningChatInput />
+              </div>
+            </>
+          )}
 
           {/* Save Section */}
           {hasChanges && !isRunning && (

@@ -131,6 +131,13 @@ interface CopycatState {
   // Final summary
   effectivenessSummary: number | null;
 
+  // Session summary & post-tuning chat
+  sessionSummary: string;
+  summaryStream: string;
+  postTuningMessages: { role: "user" | "assistant"; content: string }[];
+  postTuningStream: string;
+  isPostTuningStreaming: boolean;
+
   // Actions - config
   setReferenceModelId: (id: string) => void;
   setTargetModelId: (id: string) => void;
@@ -182,6 +189,14 @@ interface CopycatState {
   setStatusMessage: (msg: string) => void;
   clearStreams: () => void;
 
+  // Actions - summary & post-tuning chat
+  setSessionSummary: (text: string) => void;
+  appendSummaryStream: (chunk: string) => void;
+  addPostTuningMessage: (msg: { role: "user" | "assistant"; content: string }) => void;
+  appendPostTuningStream: (chunk: string) => void;
+  setIsPostTuningStreaming: (streaming: boolean) => void;
+  clearPostTuningStream: () => void;
+
   // Actions - lifecycle
   reset: () => void;
   persist: () => void;
@@ -227,6 +242,11 @@ export const useCopycatStore = create<CopycatState>((set, get) => ({
 
   // Summary
   effectivenessSummary: null,
+  sessionSummary: "",
+  summaryStream: "",
+  postTuningMessages: [],
+  postTuningStream: "",
+  isPostTuningStreaming: false,
 
   // Config actions
   setReferenceModelId: (id) => {
@@ -440,6 +460,14 @@ export const useCopycatStore = create<CopycatState>((set, get) => ({
   setStatusMessage: (msg) => set({ statusMessage: msg }),
   clearStreams: () => set({ comparisonStream: "", proposalStream: "", statusMessage: "" }),
 
+  // Summary & post-tuning chat
+  setSessionSummary: (text) => set({ sessionSummary: text }),
+  appendSummaryStream: (chunk) => set((s) => ({ summaryStream: s.summaryStream + chunk })),
+  addPostTuningMessage: (msg) => set((s) => ({ postTuningMessages: [...s.postTuningMessages, msg] })),
+  appendPostTuningStream: (chunk) => set((s) => ({ postTuningStream: s.postTuningStream + chunk })),
+  setIsPostTuningStreaming: (streaming) => set({ isPostTuningStreaming: streaming }),
+  clearPostTuningStream: () => set({ postTuningStream: "" }),
+
   // Lifecycle
   reset: () =>
     set({
@@ -456,6 +484,11 @@ export const useCopycatStore = create<CopycatState>((set, get) => ({
       proposalStream: "",
       statusMessage: "",
       effectivenessSummary: null,
+      sessionSummary: "",
+      summaryStream: "",
+      postTuningMessages: [],
+      postTuningStream: "",
+      isPostTuningStreaming: false,
     }),
 
   persist: () => {

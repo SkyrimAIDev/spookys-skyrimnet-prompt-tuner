@@ -95,6 +95,13 @@ interface AutoTunerState {
   proposalStream: string;
   statusMessage: string;
 
+  // Session summary & post-tuning chat
+  sessionSummary: string;
+  summaryStream: string;
+  postTuningMessages: { role: "user" | "assistant"; content: string }[];
+  postTuningStream: string;
+  isPostTuningStreaming: boolean;
+
   // Actions - config
   setSelectedProfileId: (id: string) => void;
   setSelectedCategory: (cat: BenchmarkCategory | null) => void;
@@ -138,6 +145,14 @@ interface AutoTunerState {
   setStatusMessage: (msg: string) => void;
   clearStreams: () => void;
 
+  // Actions - summary & post-tuning chat
+  setSessionSummary: (text: string) => void;
+  appendSummaryStream: (chunk: string) => void;
+  addPostTuningMessage: (msg: { role: "user" | "assistant"; content: string }) => void;
+  appendPostTuningStream: (chunk: string) => void;
+  setIsPostTuningStreaming: (streaming: boolean) => void;
+  clearPostTuningStream: () => void;
+
   // Actions - lifecycle
   reset: () => void;
   persist: () => void;
@@ -176,6 +191,13 @@ export const useAutoTunerStore = create<AutoTunerState>((set, get) => ({
   assessmentStream: "",
   proposalStream: "",
   statusMessage: "",
+
+  // Session summary & post-tuning chat
+  sessionSummary: "",
+  summaryStream: "",
+  postTuningMessages: [],
+  postTuningStream: "",
+  isPostTuningStreaming: false,
 
   // Config actions
   setSelectedProfileId: (id) => {
@@ -339,6 +361,14 @@ export const useAutoTunerStore = create<AutoTunerState>((set, get) => ({
   setStatusMessage: (msg) => set({ statusMessage: msg }),
   clearStreams: () => set({ explanationStream: "", assessmentStream: "", proposalStream: "", statusMessage: "" }),
 
+  // Summary & post-tuning chat
+  setSessionSummary: (text) => set({ sessionSummary: text }),
+  appendSummaryStream: (chunk) => set((s) => ({ summaryStream: s.summaryStream + chunk })),
+  addPostTuningMessage: (msg) => set((s) => ({ postTuningMessages: [...s.postTuningMessages, msg] })),
+  appendPostTuningStream: (chunk) => set((s) => ({ postTuningStream: s.postTuningStream + chunk })),
+  setIsPostTuningStreaming: (streaming) => set({ isPostTuningStreaming: streaming }),
+  clearPostTuningStream: () => set({ postTuningStream: "" }),
+
   // Lifecycle
   reset: () =>
     set({
@@ -353,6 +383,11 @@ export const useAutoTunerStore = create<AutoTunerState>((set, get) => ({
       explanationStream: "",
       assessmentStream: "",
       proposalStream: "",
+      sessionSummary: "",
+      summaryStream: "",
+      postTuningMessages: [],
+      postTuningStream: "",
+      isPostTuningStreaming: false,
     }),
 
   persist: () => {

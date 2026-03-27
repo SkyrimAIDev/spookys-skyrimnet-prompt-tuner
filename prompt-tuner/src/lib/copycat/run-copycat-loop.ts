@@ -397,6 +397,45 @@ export async function runCopycatLoop(params: CopycatLoopParams) {
     const finalStore = useCopycatStore.getState();
     if (finalStore.phase !== "error" && !abortController.signal.aborted) {
       store.setPhase("complete");
+
+      // Generate session summary
+      try {
+        store.setStatusMessage("Generating session summary...");
+        const summaryState = useCopycatStore.getState();
+        const roundSummaries = summaryState.rounds.map((r) => {
+          const score = r.effectivenessScore !== null ? `${r.effectivenessScore}%` : "N/A";
+          const settingsCount = r.proposal?.settingsChanges?.length || 0;
+          const promptCount = r.proposal?.promptChanges?.filter(
+            (c) => !c.reason?.startsWith("[SKIPPED]")
+          ).length || 0;
+          return `Round ${r.roundNumber} (Score: ${score}): ${settingsCount} settings, ${promptCount} prompt edits. ${r.proposal?.reasoning || ""}`;
+        }).join("\n");
+
+        const summaryMessages: import("@/types/llm").ChatMessage[] = [
+          {
+            role: "system",
+            content: `You are the SkyrimNet copycat tuner agent that just completed a style-matching session. Provide a clear, concise summary covering: (1) overall effectiveness trend, (2) key changes that improved style matching, (3) what didn't work, (4) recommendations for further improvement. Keep it to 3-5 short paragraphs with markdown formatting.`,
+          },
+          {
+            role: "user",
+            content: `## Copycat Session Results\n\nReference: ${referenceModelId}\nTarget: ${targetModelId}\nRounds: ${summaryState.rounds.length}\nFinal effectiveness: ${summaryState.effectivenessSummary ?? "N/A"}%\n\n${roundSummaries}\n\nPlease summarize this session.`,
+          },
+        ];
+        const summaryLog = await sendLlmRequest({
+          messages: summaryMessages,
+          agent: "tuner",
+          onChunk: (chunk) => {
+            useCopycatStore.getState().appendSummaryStream(chunk);
+          },
+          signal: abortController.signal,
+        });
+        if (!summaryLog.error) {
+          store.setSessionSummary(summaryLog.response);
+        }
+      } catch {
+        // Non-critical
+      }
+      store.setStatusMessage("");
     } else if (abortController.signal.aborted) {
       store.setPhase("stopped");
     }

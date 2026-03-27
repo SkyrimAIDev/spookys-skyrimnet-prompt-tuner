@@ -11,6 +11,7 @@ import { parseProposal } from "./parse-proposal";
 import { applySettingsChanges, applyPromptChanges } from "./apply-changes";
 import { fetchPromptContent } from "./fetch-prompt-content";
 import { createTunerTempSet, deleteTunerTempSet, TUNER_TEMP_SET } from "./save-results";
+import { buildAutoTunerSummaryMessages } from "./build-summary-prompt";
 import { sendLlmRequest, sendLlmRequestWithSlot } from "@/lib/llm/client";
 import { useAutoTunerStore } from "@/stores/autoTunerStore";
 
@@ -574,6 +575,40 @@ export async function runTuningLoop(
     const finalStore = useAutoTunerStore.getState();
     if (finalStore.phase !== "error" && !abortController.signal.aborted) {
       store.setPhase("complete");
+
+      // Generate session summary
+      try {
+        store.setStatusMessage("Generating session summary...");
+        const summaryState = useAutoTunerStore.getState();
+        const lastRound = summaryState.rounds[summaryState.rounds.length - 1];
+        const stoppedEarly = !!lastRound?.proposal?.stopTuning;
+        const hadPromptChanges = summaryState.rounds.some(
+          (r) => r.proposal?.promptChanges?.some((c) => !c.reason?.startsWith("[SKIPPED]"))
+        );
+        const summaryMessages = buildAutoTunerSummaryMessages({
+          agentName: catDef?.label || category,
+          rounds: summaryState.rounds,
+          originalSettings: originalSettings,
+          finalSettings: workingSettings,
+          hadPromptChanges,
+          stoppedEarly,
+          stopReason: lastRound?.proposal?.stopReason,
+        });
+        const summaryLog = await sendLlmRequest({
+          messages: summaryMessages,
+          agent: "tuner",
+          onChunk: (chunk) => {
+            useAutoTunerStore.getState().appendSummaryStream(chunk);
+          },
+          signal: abortController.signal,
+        });
+        if (!summaryLog.error) {
+          store.setSessionSummary(summaryLog.response);
+        }
+      } catch {
+        // Summary generation is non-critical — don't fail the session
+      }
+      store.setStatusMessage("");
     } else if (abortController.signal.aborted) {
       store.setPhase("stopped");
     }

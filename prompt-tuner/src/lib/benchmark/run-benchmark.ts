@@ -5,8 +5,9 @@ import type { AgentType, ModelSlot } from "@/types/config";
 import { getCategoryDef } from "./categories";
 import { getDefaultScenario, buildRenderBody, buildMultiTurnRenderBody, resolveScenarioNpcs } from "./default-scenarios";
 import { buildExplanationMessages } from "./build-explanation-prompt";
+import { buildAssessmentMessages } from "./build-assessment-prompt";
 import { useBenchmarkStore } from "@/stores/benchmarkStore";
-import { sendLlmRequestWithSlot } from "@/lib/llm/client";
+import { sendLlmRequest, sendLlmRequestWithSlot } from "@/lib/llm/client";
 
 /**
  * Run a self-explanation follow-up: asks the same model to explain
@@ -258,6 +259,11 @@ export async function runBenchmark(
       const key = `${profile.id}-${category}`;
       useBenchmarkStore.getState().finalizeResult(key);
     }
+
+    // Auto-generate assessment
+    if (!abortController.signal.aborted) {
+      await autoGenerateAssessment(category, abortController);
+    }
   } catch (err: unknown) {
     if (err instanceof Error && err.name === "AbortError") return;
     console.error("Benchmark error:", err);
@@ -455,12 +461,54 @@ async function runMultiTurnBenchmark(
       const key = `${profile.id}-${category}`;
       useBenchmarkStore.getState().finalizeResult(key);
     }
+
+    // Auto-generate assessment
+    if (!abortController.signal.aborted) {
+      await autoGenerateAssessment(category, abortController);
+    }
   } catch (err: unknown) {
     if (err instanceof Error && err.name === "AbortError") return;
     console.error("Multi-turn benchmark error:", err);
   } finally {
     useBenchmarkStore.getState().setIsRunning(false);
     useBenchmarkStore.getState().setAbortController(null);
+  }
+}
+
+/**
+ * Auto-generate a quality assessment after all benchmark profiles complete.
+ */
+async function autoGenerateAssessment(
+  category: BenchmarkCategory,
+  abortController: AbortController,
+) {
+  const store = useBenchmarkStore.getState();
+  const results = Object.values(store.results).filter(
+    (r) => r.category === category && r.overallStatus === "done"
+  );
+  if (results.length === 0) return;
+
+  try {
+    store.setAssessment({ streamedText: "", status: "streaming", error: undefined });
+
+    const messages = buildAssessmentMessages(results, store.renderedText);
+    const log = await sendLlmRequest({
+      messages,
+      agent: "tuner",
+      onChunk: (chunk) => {
+        useBenchmarkStore.getState().updateAssessmentStream(chunk);
+      },
+      signal: abortController.signal,
+    });
+
+    if (log.error) {
+      store.setAssessment({ status: "error", error: log.error });
+    } else {
+      store.setAssessment({ streamedText: log.response, status: "done" });
+    }
+  } catch {
+    // Non-critical — user can still trigger manually
+    store.setAssessment({ status: "idle" });
   }
 }
 
