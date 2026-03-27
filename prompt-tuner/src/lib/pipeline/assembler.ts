@@ -52,6 +52,7 @@ export interface SimulationState {
   scenePlan: Record<string, InjaValue> | null;
   isContinuousMode: boolean;
   hasScenePlan: boolean;
+  isNarrationEnabled: boolean;
   enrichedNpcMap?: Map<string, EnrichedNpc>;
 }
 
@@ -386,7 +387,7 @@ function buildDecoratorFunctions(
       });
     },
 
-    is_narration_enabled: () => true,
+    is_narration_enabled: () => simState.isNarrationEnabled,
 
     // ===== Template rendering =====
 

@@ -128,6 +128,8 @@ interface SimulationState {
   autochatDuration: number;  // minutes, 0 = infinite
   autochatStartedAt: number | null;  // timestamp ms
   autochatStatus: "idle" | "running" | "cooldown";
+  // Narration toggle
+  isNarrationEnabled: boolean;
   // Multichat comparison
   multichatEnabled: boolean;
   multichatProfileIds: string[];  // persisted checked profiles
@@ -170,6 +172,8 @@ interface SimulationState {
   addGmAction: (action: GmActionEntry) => void;
   advanceBeat: () => void;
   clearScenePlan: () => void;
+  // Narration
+  setIsNarrationEnabled: (enabled: boolean) => void;
   // Inference mixer
   setInferenceOverrides: (overrides: Partial<import("@/types/config").AiTuningSettings> | null) => void;
   // Autochat
@@ -223,6 +227,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   })(),
   autochatStartedAt: null,
   autochatStatus: "idle",
+  isNarrationEnabled: true,
   multichatEnabled: false,
   multichatProfileIds: [],
   multichatStreaming: {},
@@ -380,6 +385,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   clearScenePlan: () =>
     set({ scenePlan: null, gmActionLog: [], isPlanning: false, gmStatus: "idle" }),
 
+  setIsNarrationEnabled: (enabled) => set({ isNarrationEnabled: enabled }),
   setInferenceOverrides: (overrides) => set({ inferenceOverrides: overrides }),
   setAutochatEnabled: (enabled) => set({ autochatEnabled: enabled }),
   setAutochatDuration: (minutes) => {

@@ -145,10 +145,12 @@ export async function runBenchmark(
       const subtask = catDef.subtasks[stIdx];
 
       // Render this subtask's prompt template once
+      const narrationEnabled = useBenchmarkStore.getState().isNarrationEnabled;
       const renderBody = buildRenderBody(
         subtask.id,
         activeScenario,
         promptSetBase,
+        narrationEnabled,
       );
 
       const renderResponse = await fetch(subtask.renderEndpoint, {
@@ -361,11 +363,13 @@ async function runMultiTurnBenchmark(
         });
 
         // 2. Render the prompt for the responding NPC with current chat
+        const narrationEnabled = useBenchmarkStore.getState().isNarrationEnabled;
         const renderBody = buildMultiTurnRenderBody(
           turn,
           scenario,
           accumulatedChat,
           promptSetBase,
+          narrationEnabled,
         );
 
         try {

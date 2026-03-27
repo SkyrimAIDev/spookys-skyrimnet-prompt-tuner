@@ -141,6 +141,7 @@ export async function runTuningLoop(
               activeScenario,
               accumulatedChat,
               promptSetBase,
+              useAutoTunerStore.getState().isNarrationEnabled,
             );
 
             const renderResponse = await fetch("/api/prompts/render-dialogue", {
@@ -214,7 +215,7 @@ export async function runTuningLoop(
             store.setStatusMessage(`${subtaskProgress} — rendering prompt...`);
 
             _t(`subtask ${stIdx} "${subtask.label}" render START`);
-            const renderBody = buildRenderBody(subtask.id, activeScenario, promptSetBase);
+            const renderBody = buildRenderBody(subtask.id, activeScenario, promptSetBase, useAutoTunerStore.getState().isNarrationEnabled);
 
             const renderResponse = await fetch(subtask.renderEndpoint, {
               method: "POST",

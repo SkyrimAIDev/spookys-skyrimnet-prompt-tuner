@@ -16,6 +16,23 @@ import {
 import { InferenceMixer } from "@/components/chat/InferenceMixer";
 import { MultichatSelector } from "@/components/chat/MultichatSelector";
 
+function NarrationToggle() {
+  const isNarrationEnabled = useSimulationStore((s) => s.isNarrationEnabled);
+  const setIsNarrationEnabled = useSimulationStore((s) => s.setIsNarrationEnabled);
+
+  return (
+    <label className="flex items-center gap-1.5 cursor-pointer" title="Enable narration (asterisk actions) in NPC responses">
+      <input
+        type="checkbox"
+        checked={isNarrationEnabled}
+        onChange={(e) => setIsNarrationEnabled(e.target.checked)}
+        className="h-3 w-3"
+      />
+      <span className="text-[10px] text-muted-foreground">Narration</span>
+    </label>
+  );
+}
+
 const GM_STATUS_LABELS: Record<string, { label: string; color: string }> = {
   idle: { label: "Idle", color: "text-muted-foreground" },
   planning: { label: "Planning...", color: "text-yellow-400" },
@@ -76,6 +93,7 @@ export function GmControls() {
             GameMaster Mode
           </span>
         </label>
+        <NarrationToggle />
         <InferenceMixer />
         <MultichatSelector />
       </div>

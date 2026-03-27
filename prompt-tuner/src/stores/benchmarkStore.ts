@@ -46,6 +46,7 @@ interface BenchmarkState {
   renderedText: string;
   customScenarios: BenchmarkScenario[];
   abortController: AbortController | null;
+  isNarrationEnabled: boolean;
 
   setActiveTurns: (turns: BenchmarkDialogueTurn[] | null) => void;
   setSelectedProfileIds: (ids: string[]) => void;
@@ -68,6 +69,7 @@ interface BenchmarkState {
   addCustomScenario: (scenario: BenchmarkScenario) => void;
   updateCustomScenario: (id: string, scenario: BenchmarkScenario) => void;
   deleteCustomScenario: (id: string) => void;
+  setIsNarrationEnabled: (enabled: boolean) => void;
   persist: () => void;
 }
 
@@ -85,6 +87,7 @@ export const useBenchmarkStore = create<BenchmarkState>((set, get) => ({
   renderedMessages: null,
   renderedText: "",
   customScenarios: _persisted.customScenarios,
+  isNarrationEnabled: true,
   abortController: null,
 
   setActiveTurns: (turns) => set({ activeTurns: turns }),
@@ -246,6 +249,8 @@ export const useBenchmarkStore = create<BenchmarkState>((set, get) => ({
     }));
     get().persist();
   },
+
+  setIsNarrationEnabled: (enabled) => set({ isNarrationEnabled: enabled }),
 
   persist: () => {
     if (typeof window === "undefined") return;

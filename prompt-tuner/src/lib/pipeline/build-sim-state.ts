@@ -395,6 +395,8 @@ export interface BuildSimStateParams {
   isContinuousMode?: boolean;
   // Game events from trigger store
   gameEvents?: SimulatedEvent[];
+  // Narration
+  isNarrationEnabled?: boolean;
   // Custom
   customVariables?: Record<string, InjaValue>;
 }
@@ -418,6 +420,7 @@ export function buildFullSimulationState(params: BuildSimStateParams): Simulatio
     scenePlan = null,
     isContinuousMode = false,
     gameEvents = [],
+    isNarrationEnabled = true,
     customVariables = {},
   } = params;
 
@@ -570,6 +573,7 @@ export function buildFullSimulationState(params: BuildSimStateParams): Simulatio
     scenePlan: scenePlanObj as Record<string, InjaValue> | null,
     isContinuousMode,
     hasScenePlan: !!scenePlanObj,
+    isNarrationEnabled,
     enrichedNpcMap,
   };
 }

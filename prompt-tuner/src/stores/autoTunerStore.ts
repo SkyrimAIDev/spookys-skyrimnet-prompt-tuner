@@ -76,6 +76,7 @@ interface AutoTunerState {
   lockedSettings: (keyof AiTuningSettingsType)[];
   customInstructions: string;
   ignoreFormatScoring: boolean;
+  isNarrationEnabled: boolean;
 
   // Run state (volatile)
   isRunning: boolean;
@@ -114,6 +115,7 @@ interface AutoTunerState {
   setLockedSettings: (keys: (keyof AiTuningSettingsType)[]) => void;
   setCustomInstructions: (text: string) => void;
   setIgnoreFormatScoring: (ignore: boolean) => void;
+  setIsNarrationEnabled: (enabled: boolean) => void;
 
   // Actions - run state
   setIsRunning: (running: boolean) => void;
@@ -173,6 +175,7 @@ export const useAutoTunerStore = create<AutoTunerState>((set, get) => ({
   lockedSettings: _persisted.lockedSettings,
   customInstructions: _persisted.customInstructions,
   ignoreFormatScoring: _persisted.ignoreFormatScoring,
+  isNarrationEnabled: true,
 
   // Run state
   isRunning: false,
@@ -244,6 +247,7 @@ export const useAutoTunerStore = create<AutoTunerState>((set, get) => ({
     set({ ignoreFormatScoring: ignore });
     get().persist();
   },
+  setIsNarrationEnabled: (enabled) => set({ isNarrationEnabled: enabled }),
 
   // Run state actions
   setIsRunning: (running) => set({ isRunning: running }),

@@ -67,6 +67,7 @@ async function runDialogue(
       scenario,
       accumulatedChat,
       promptSetBase,
+      useCopycatStore.getState().isNarrationEnabled,
     );
 
     const renderResponse = await fetch("/api/prompts/render-dialogue", {

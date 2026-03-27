@@ -171,6 +171,7 @@ export function PreviewChat() {
           gameEvents,
           promptSetBase: activePromptSet || undefined,
           enabledSaves: buildEnabledSavesPayload(),
+          isNarrationEnabled: useSimulationStore.getState().isNarrationEnabled,
         }),
       });
       const renderData = await renderRes.json();

@@ -92,6 +92,8 @@ export function AutoTunerSetup() {
   const customInstructions = useAutoTunerStore((s) => s.customInstructions);
   const setCustomInstructions = useAutoTunerStore((s) => s.setCustomInstructions);
   const ignoreFormatScoring = useAutoTunerStore((s) => s.ignoreFormatScoring);
+  const isNarrationEnabled = useAutoTunerStore((s) => s.isNarrationEnabled);
+  const setIsNarrationEnabled = useAutoTunerStore((s) => s.setIsNarrationEnabled);
   const setIgnoreFormatScoring = useAutoTunerStore((s) => s.setIgnoreFormatScoring);
   const isRunning = useAutoTunerStore((s) => s.isRunning);
   const reset = useAutoTunerStore((s) => s.reset);
@@ -486,6 +488,22 @@ export function AutoTunerSetup() {
                 )}
               </div>
             )}
+
+            {/* Narration toggle */}
+            <div className="px-1">
+              <label className="flex items-center gap-2 rounded px-2 py-1.5 text-xs cursor-pointer hover:bg-accent/50">
+                <input
+                  type="checkbox"
+                  checked={isNarrationEnabled}
+                  onChange={(e) => setIsNarrationEnabled(e.target.checked)}
+                  className="h-3 w-3"
+                  disabled={isRunning}
+                />
+                <span className={isNarrationEnabled ? "font-medium" : "text-muted-foreground"}>
+                  Enable Narration
+                </span>
+              </label>
+            </div>
 
             {/* Ignore Format Scoring */}
             <div className="px-1">

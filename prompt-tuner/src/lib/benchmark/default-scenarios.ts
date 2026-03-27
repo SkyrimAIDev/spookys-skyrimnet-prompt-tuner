@@ -286,12 +286,14 @@ export function buildRenderBody(
   subtaskId: string,
   scenario: BenchmarkScenario,
   promptSetBase?: string,
+  isNarrationEnabled?: boolean,
 ): Record<string, unknown> {
   const base = {
     player: scenario.player,
     scene: scenario.scene,
     promptSetBase,
     enabledSaves: buildEnabledSavesPayload(),
+    isNarrationEnabled: isNarrationEnabled ?? true,
   };
 
   const npcs = scenario.npcs.map((n, i) => toNpcConfig(n, i));
@@ -404,6 +406,7 @@ export function buildMultiTurnRenderBody(
   scenario: BenchmarkScenario,
   accumulatedChat: BenchmarkChatEntry[],
   promptSetBase?: string,
+  isNarrationEnabled?: boolean,
 ): Record<string, unknown> {
   const npcs = scenario.npcs.map((n, i) => toNpcConfig(n, i));
   const respondingNpc = npcs[turn.respondingNpcIndex];
@@ -425,6 +428,7 @@ export function buildMultiTurnRenderBody(
     scene: scenario.scene,
     promptSetBase,
     enabledSaves: buildEnabledSavesPayload(),
+    isNarrationEnabled: isNarrationEnabled ?? true,
     npc: respondingNpc,
     selectedNpcs: npcs,
     chatHistory: chat,

@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
         scenePlan: simulationState.scenePlan || null,
         isContinuousMode: simulationState.isContinuousMode ?? false,
         hasScenePlan: simulationState.hasScenePlan ?? false,
+        isNarrationEnabled: simulationState.isNarrationEnabled ?? true,
       };
     } else {
       simState = buildFullSimulationState({

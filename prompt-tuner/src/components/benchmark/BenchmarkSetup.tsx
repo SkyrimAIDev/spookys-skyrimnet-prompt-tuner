@@ -43,6 +43,8 @@ export function BenchmarkSetup() {
   const selectedPromptSet = useBenchmarkStore((s) => s.selectedPromptSet);
   const setSelectedPromptSet = useBenchmarkStore((s) => s.setSelectedPromptSet);
   const isRunning = useBenchmarkStore((s) => s.isRunning);
+  const isNarrationEnabled = useBenchmarkStore((s) => s.isNarrationEnabled);
+  const setIsNarrationEnabled = useBenchmarkStore((s) => s.setIsNarrationEnabled);
   const activeCategory = useBenchmarkStore((s) => s.activeCategory);
   const activeScenarioIds = useBenchmarkStore((s) => s.activeScenarioIds);
   const setActiveScenarioId = useBenchmarkStore((s) => s.setActiveScenarioId);
@@ -179,6 +181,20 @@ export function BenchmarkSetup() {
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* Narration toggle */}
+          <div className="px-1">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isNarrationEnabled}
+                onChange={(e) => setIsNarrationEnabled(e.target.checked)}
+                className="h-3 w-3"
+                disabled={isRunning}
+              />
+              <span className="text-[10px] text-muted-foreground">Enable Narration</span>
+            </label>
           </div>
 
           <Separator />

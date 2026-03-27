@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
       promptSetBase,
       dialogueRequest: bodyDialogueRequest,
       enabledSaves,
+      isNarrationEnabled,
     } = body;
 
     const baseDir = resolvePromptSetBaseServer(promptSetBase);
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
       },
       renderMode: "full",
       gameEvents,
+      isNarrationEnabled: isNarrationEnabled ?? true,
     });
 
     const result = await assemblePrompt(templateSource, simState, fileLoader);

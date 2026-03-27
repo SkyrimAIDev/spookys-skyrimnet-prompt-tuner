@@ -108,6 +108,8 @@ interface CopycatState {
   referenceApiOverride: ApiOverride;
   targetApiOverride: ApiOverride;
 
+  isNarrationEnabled: boolean;
+
   // Run state (volatile)
   isRunning: boolean;
   currentRound: number;
@@ -153,6 +155,7 @@ interface CopycatState {
   updateStartingSetting: <K extends keyof AiTuningSettings>(key: K, value: AiTuningSettings[K]) => void;
   setReferenceApiOverride: (override: Partial<ApiOverride>) => void;
   setTargetApiOverride: (override: Partial<ApiOverride>) => void;
+  setIsNarrationEnabled: (enabled: boolean) => void;
 
   // Actions - run state
   setIsRunning: (running: boolean) => void;
@@ -219,6 +222,7 @@ export const useCopycatStore = create<CopycatState>((set, get) => ({
   startingSettings: _persisted.startingSettings,
   referenceApiOverride: _persisted.referenceApiOverride,
   targetApiOverride: _persisted.targetApiOverride,
+  isNarrationEnabled: true,
 
   // Run state
   isRunning: false,
@@ -311,6 +315,8 @@ export const useCopycatStore = create<CopycatState>((set, get) => ({
     }));
     get().persist();
   },
+
+  setIsNarrationEnabled: (enabled) => set({ isNarrationEnabled: enabled }),
 
   // Run state actions
   setIsRunning: (running) => set({ isRunning: running }),
