@@ -4,6 +4,7 @@ import type { AiTuningSettings } from "@/types/config";
 import type { AiTuningSettings as AiTuningSettingsType } from "@/types/config";
 import type {
   TuningTarget,
+  PromptEditingMode,
   TunerPhase,
   TunerRound,
   TunerProposal,
@@ -19,6 +20,8 @@ function loadPersisted(): {
   selectedScenarioId: string;
   selectedPromptSet: string;
   tuningTarget: TuningTarget;
+  promptEditingMode: PromptEditingMode;
+  customPromptPaths: string[];
   maxRounds: number;
   lockedSettings: (keyof AiTuningSettingsType)[];
   customInstructions: string;
@@ -30,6 +33,8 @@ function loadPersisted(): {
     selectedScenarioId: "",
     selectedPromptSet: "__active__",
     tuningTarget: "settings" as TuningTarget,
+    promptEditingMode: "recommended" as PromptEditingMode,
+    customPromptPaths: [] as string[],
     maxRounds: 5,
     lockedSettings: ["maxTokens", "allowReasoning", "reasoningEffort", "structuredOutputs", "stopSequences"] as (keyof AiTuningSettingsType)[],
     customInstructions: "",
@@ -46,6 +51,8 @@ function loadPersisted(): {
         selectedScenarioId: data.selectedScenarioId ?? "",
         selectedPromptSet: data.selectedPromptSet ?? "__active__",
         tuningTarget: data.tuningTarget ?? "settings",
+        promptEditingMode: data.promptEditingMode ?? "recommended",
+        customPromptPaths: data.customPromptPaths ?? [],
         maxRounds: data.maxRounds ?? 5,
         lockedSettings: data.lockedSettings ?? ["maxTokens", "allowReasoning", "reasoningEffort"],
         customInstructions: data.customInstructions ?? "",
@@ -63,6 +70,8 @@ interface AutoTunerState {
   selectedScenarioId: string;
   selectedPromptSet: string;
   tuningTarget: TuningTarget;
+  promptEditingMode: PromptEditingMode;
+  customPromptPaths: string[];
   maxRounds: number;
   lockedSettings: (keyof AiTuningSettingsType)[];
   customInstructions: string;
@@ -92,6 +101,8 @@ interface AutoTunerState {
   setSelectedScenarioId: (id: string) => void;
   setSelectedPromptSet: (name: string) => void;
   setTuningTarget: (target: TuningTarget) => void;
+  setPromptEditingMode: (mode: PromptEditingMode) => void;
+  setCustomPromptPaths: (paths: string[]) => void;
   setMaxRounds: (n: number) => void;
   setLockedSettings: (keys: (keyof AiTuningSettingsType)[]) => void;
   setCustomInstructions: (text: string) => void;
@@ -141,6 +152,8 @@ export const useAutoTunerStore = create<AutoTunerState>((set, get) => ({
   selectedScenarioId: _persisted.selectedScenarioId,
   selectedPromptSet: _persisted.selectedPromptSet,
   tuningTarget: _persisted.tuningTarget,
+  promptEditingMode: _persisted.promptEditingMode,
+  customPromptPaths: _persisted.customPromptPaths,
   maxRounds: _persisted.maxRounds,
   lockedSettings: _persisted.lockedSettings,
   customInstructions: _persisted.customInstructions,
@@ -183,6 +196,14 @@ export const useAutoTunerStore = create<AutoTunerState>((set, get) => ({
   },
   setTuningTarget: (target) => {
     set({ tuningTarget: target });
+    get().persist();
+  },
+  setPromptEditingMode: (mode) => {
+    set({ promptEditingMode: mode });
+    get().persist();
+  },
+  setCustomPromptPaths: (paths) => {
+    set({ customPromptPaths: paths });
     get().persist();
   },
   setMaxRounds: (n) => {
@@ -336,11 +357,11 @@ export const useAutoTunerStore = create<AutoTunerState>((set, get) => ({
 
   persist: () => {
     if (typeof window === "undefined") return;
-    const { selectedProfileId, selectedCategory, selectedScenarioId, selectedPromptSet, tuningTarget, maxRounds, lockedSettings, customInstructions, ignoreFormatScoring } = get();
+    const { selectedProfileId, selectedCategory, selectedScenarioId, selectedPromptSet, tuningTarget, promptEditingMode, customPromptPaths, maxRounds, lockedSettings, customInstructions, ignoreFormatScoring } = get();
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ selectedProfileId, selectedCategory, selectedScenarioId, selectedPromptSet, tuningTarget, maxRounds, lockedSettings, customInstructions, ignoreFormatScoring })
+        JSON.stringify({ selectedProfileId, selectedCategory, selectedScenarioId, selectedPromptSet, tuningTarget, promptEditingMode, customPromptPaths, maxRounds, lockedSettings, customInstructions, ignoreFormatScoring })
       );
     } catch { /* ignore */ }
   },

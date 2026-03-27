@@ -1,8 +1,8 @@
 import type { ChatMessage } from "@/types/llm";
 import type { AiTuningSettings } from "@/types/config";
-import type { TuningTarget } from "@/types/autotuner";
+import type { TuningTarget, PromptEditingMode } from "@/types/autotuner";
 import type { CopycatRound, CopycatDialogueTurn } from "@/types/copycat";
-import { buildPipelineGuide } from "@/lib/autotuner/build-proposal-prompt";
+import { buildPipelineGuide, buildPromptEditingRules } from "@/lib/autotuner/build-proposal-prompt";
 
 const SETTINGS_DESCRIPTIONS: Record<keyof AiTuningSettings, string> = {
   temperature: "Controls randomness. Lower = more deterministic, higher = more creative. Range: 0.0-2.0",
@@ -32,6 +32,7 @@ export function buildCopycatMessages({
   previousRounds,
   lockedSettings = [],
   customInstructions = "",
+  promptEditingMode = "auto",
 }: {
   referenceModelId: string;
   targetModelId: string;
@@ -44,6 +45,7 @@ export function buildCopycatMessages({
   previousRounds: CopycatRound[];
   lockedSettings?: (keyof AiTuningSettings)[];
   customInstructions?: string;
+  promptEditingMode?: PromptEditingMode;
 }): ChatMessage[] {
   const canModifySettings = tuningTarget === "settings" || tuningTarget === "both";
   const canModifyPrompts = tuningTarget === "prompts" || tuningTarget === "both";
@@ -124,7 +126,13 @@ ${previousRounds.map((r) => {
     ? `Settings changes: ${r.proposal.settingsChanges.map((c) => `${c.parameter}: ${JSON.stringify(c.oldValue)} → ${JSON.stringify(c.newValue)}`).join(", ")}`
     : "No settings changes";
   const promptChanges = r.proposal?.promptChanges?.length
-    ? `Prompt changes: ${r.proposal.promptChanges.map((c) => `${c.filePath}: ${c.reason}`).join("; ")}`
+    ? `Prompt changes:\n${r.proposal.promptChanges.map((c) => {
+        const skipped = c.reason?.startsWith("[SKIPPED]") ? " **(SKIPPED — not applied)**" : "";
+        const fileName = c.filePath.split("/").pop() || c.filePath;
+        const searchSnippet = c.searchText ? c.searchText.substring(0, 150) : "(new file)";
+        const replaceSnippet = c.replaceText ? c.replaceText.substring(0, 150) : "(deleted)";
+        return `  • \`${fileName}\`: ${c.reason}${skipped}\n    Search: "${searchSnippet}${(c.searchText?.length || 0) > 150 ? "..." : ""}"\n    Replace: "${replaceSnippet}${(c.replaceText?.length || 0) > 150 ? "..." : ""}"`;
+      }).join("\n")}`
     : "No prompt changes";
   return `### Round ${r.roundNumber} (Score: ${score})
 - ${settingsChanges}
@@ -183,15 +191,7 @@ ${canModifyPrompts ? `7. **Read and understand BEFORE editing.** The full conten
    - Respect the file's structure: if it has numbered sections, conditional branches, or a specific format, maintain that structure
    - NEVER edit files tagged **[DO NOT EDIT]** — they are pure template scaffolding shown only as context
    - For files tagged **[EDIT WITH CARE]** — only modify plain-text prose, never restructure template blocks
-8. **Choose between editing an existing file or creating a new one.** First, read all existing files in the relevant submodule to check if your intended instructions are already covered or closely related to existing content. Then:
-   - **Edit an existing file** if your change naturally fits alongside its current instructions (e.g., adding a roleplay rule to the roleplay guidelines file, or tweaking an existing instruction). This avoids scattering related rules across multiple files.
-   - **Create a new file** when your instructions represent a genuinely new topic not covered by any existing file (e.g., prose craft rules when no writing quality file exists). Use a numbered name that places it in the right position within the submodule directory.
-   - Available slots for new files: \`guidelines/0600-0800\` (between roleplay and format), \`user_final_instructions/0300-0600\` (between combat status and audio tags), \`system_head/0015\` (between task description and format rules)
-   - To create a new file: use an empty \`search_text\` ("") and put the full file content in \`replace_text\`
-   - NEVER duplicate instructions that already exist in another file — if a rule is already covered, modify the existing one instead
-9. **When modifying existing files:** Your \`search_text\` must be a SHORT, specific portion of plain-text content — never replace entire files or large blocks. Preserve all template syntax, section markers, and conditional branches exactly as they are. Only modify the natural-language instruction text between template blocks.
-10. **Prompt changes must be universal.** These prompts are used for THOUSANDS of different NPC dialogues across all of Skyrim — guards, merchants, innkeepers, quest characters, companions, etc. Proposed changes must improve dialogue quality for ANY NPC in ANY context. NEVER propose changes that are specific to the current test scenario (e.g., referencing specific locations, quests, or NPC names from the test). Test your proposed instruction mentally: would it help a blacksmith AND a jarl AND a bard? If not, don't propose it.
-11. **Keep additions concise.** SkyrimNet has a default max context of 4096 tokens. The official docs warn: "Too many rules = more hallucinations." Add the minimum instruction needed. A single clear sentence beats a paragraph of explanation.
+${buildPromptEditingRules("dialogue", promptEditingMode || "auto")}
 12. **Prompt changes are persistent.** Changes you make in one round carry forward to the next. The target model runs with the modified prompts each round.
 13. **Prefer prompt changes for style issues.** Settings like temperature/maxTokens control randomness and length, but prompt instructions are the most effective lever for controlling response style, personality expression, and dialogue habits.
 

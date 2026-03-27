@@ -4,6 +4,15 @@ import type { ChatMessage } from "./llm";
 
 export type TuningTarget = "prompts" | "settings" | "both";
 
+/**
+ * Controls which prompts the tuner is allowed to edit:
+ * - recommended: only the best prompts for the current agent (default)
+ * - new_prompt: LLM creates a new prompt file only, no editing existing
+ * - auto: LLM decides which files to edit or whether to create new ones
+ * - custom: user-selected specific prompt files
+ */
+export type PromptEditingMode = "recommended" | "new_prompt" | "auto" | "custom";
+
 export type TunerPhase =
   | "idle"
   | "benchmarking"
@@ -70,6 +79,9 @@ export interface AutoTunerConfig {
   selectedScenarioId: string;
   selectedPromptSet: string;
   tuningTarget: TuningTarget;
+  promptEditingMode: PromptEditingMode;
+  /** Paths selected by user in "custom" mode (relative to prompt set base) */
+  customPromptPaths: string[];
   maxRounds: number;
   lockedSettings: (keyof AiTuningSettings)[];
   customInstructions: string;

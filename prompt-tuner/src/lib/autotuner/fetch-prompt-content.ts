@@ -196,11 +196,15 @@ export async function fetchPromptContent(
   promptSetName: string,
   fallbackSetName?: string,
   scenarioNpcs?: BenchmarkNpc[],
+  _promptEditingMode?: import("@/types/autotuner").PromptEditingMode,
+  _customPromptPaths?: string[],
 ): Promise<{ content: string; files: { path: string; name: string; content: string }[] }> {
   const catDef = getCategoryDef(category);
   if (!catDef) return { content: "", files: [] };
 
   const agent = catDef.agent;
+  // Always fetch all agent paths — the editing mode is enforced in the LLM instructions,
+  // not by filtering which files are shown. The LLM needs full context to make good edits.
   const paths = AGENT_PROMPT_PATHS[agent] || ["submodules/system_head"];
 
   // Resolve the set name to an absolute base path on disk
@@ -257,32 +261,46 @@ export async function fetchPromptContent(
         allFiles.push({ path: fullPath, name: entry, content });
         totalLength += content.length;
       } else {
-        // Directory — try primary, fall back through chain for listing
-        let promptFiles = await tryListPromptFiles(fullPath);
-        let usedFallbackDir: string | null = null;
-        if (promptFiles.length === 0) {
-          for (const fb of fallbackPaths) {
-            promptFiles = await tryListPromptFiles(fb);
-            if (promptFiles.length > 0) {
-              usedFallbackDir = fb;
-              break;
+        // Directory — merge primary listing with fallback listings so that
+        // files modified in the temp set are read from there, while unmodified
+        // files are still included from the source/original set.
+        const primaryFiles = await tryListPromptFiles(fullPath);
+        const primaryNames = new Set(primaryFiles.map((f) => f.name));
+
+        // Collect fallback files that don't exist in the primary set
+        const fallbackFiles: { entry: FileEntry; dir: string }[] = [];
+        for (const fb of fallbackPaths) {
+          const fbFiles = await tryListPromptFiles(fb);
+          for (const f of fbFiles) {
+            if (!primaryNames.has(f.name)) {
+              primaryNames.add(f.name); // prevent duplicates across fallbacks
+              fallbackFiles.push({ entry: f, dir: fb });
             }
           }
         }
 
-        for (const file of promptFiles) {
+        // Build merged list: primary files first, then fallback-only files (sorted by name)
+        const mergedFiles: { name: string; readPath: string; primaryPath: string }[] = [];
+        for (const f of primaryFiles) {
+          mergedFiles.push({ name: f.name, readPath: f.path, primaryPath: f.path });
+        }
+        for (const { entry: f } of fallbackFiles) {
+          mergedFiles.push({
+            name: f.name,
+            readPath: f.path,
+            primaryPath: `${fullPath}/${f.name}`.replace(/\\/g, "/"),
+          });
+        }
+        mergedFiles.sort((a, b) => a.name.localeCompare(b.name));
+
+        for (const file of mergedFiles) {
           if (totalLength > MAX_TOTAL) break;
 
-          // Read from wherever the file was listed
-          const content = await tryReadFile(file.path);
+          const content = await tryReadFile(file.readPath);
           if (content === null) continue;
 
-          // Remap path to primary set so LLM targets the writable location
-          const primaryFilePath = usedFallbackDir
-            ? `${fullPath}/${file.name}`.replace(/\\/g, "/")
-            : file.path;
-
-          allFiles.push({ path: primaryFilePath, name: `${entry}/${file.name}`, content });
+          // Always use the primary (temp set) path so LLM targets the writable location
+          allFiles.push({ path: file.primaryPath, name: `${entry}/${file.name}`, content });
           totalLength += content.length;
         }
       }

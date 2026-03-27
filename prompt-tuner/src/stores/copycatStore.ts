@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { AiTuningSettings } from "@/types/config";
 import type {
   TuningTarget,
+  PromptEditingMode,
   TunerProposal,
 } from "@/types/autotuner";
 import type {
@@ -40,6 +41,8 @@ function loadPersisted(): {
   selectedScenarioId: string;
   selectedPromptSet: string;
   tuningTarget: TuningTarget;
+  promptEditingMode: PromptEditingMode;
+  customPromptPaths: string[];
   maxRounds: number;
   lockedSettings: (keyof AiTuningSettings)[];
   customInstructions: string;
@@ -53,6 +56,8 @@ function loadPersisted(): {
     selectedScenarioId: "",
     selectedPromptSet: "__active__",
     tuningTarget: "settings" as TuningTarget,
+    promptEditingMode: "recommended" as PromptEditingMode,
+    customPromptPaths: [] as string[],
     maxRounds: 5,
     lockedSettings: ["maxTokens", "allowReasoning", "reasoningEffort", "structuredOutputs", "stopSequences"] as (keyof AiTuningSettings)[],
     customInstructions: "",
@@ -71,6 +76,8 @@ function loadPersisted(): {
         selectedScenarioId: data.selectedScenarioId ?? "",
         selectedPromptSet: data.selectedPromptSet ?? "__active__",
         tuningTarget: data.tuningTarget ?? "settings",
+        promptEditingMode: data.promptEditingMode ?? "recommended",
+        customPromptPaths: data.customPromptPaths ?? [],
         maxRounds: data.maxRounds ?? 5,
         lockedSettings: data.lockedSettings ?? [],
         customInstructions: data.customInstructions ?? "",
@@ -92,6 +99,8 @@ interface CopycatState {
   selectedScenarioId: string;
   selectedPromptSet: string;
   tuningTarget: TuningTarget;
+  promptEditingMode: PromptEditingMode;
+  customPromptPaths: string[];
   maxRounds: number;
   lockedSettings: (keyof AiTuningSettings)[];
   customInstructions: string;
@@ -128,6 +137,8 @@ interface CopycatState {
   setSelectedScenarioId: (id: string) => void;
   setSelectedPromptSet: (name: string) => void;
   setTuningTarget: (target: TuningTarget) => void;
+  setPromptEditingMode: (mode: PromptEditingMode) => void;
+  setCustomPromptPaths: (paths: string[]) => void;
   setMaxRounds: (n: number) => void;
   setLockedSettings: (keys: (keyof AiTuningSettings)[]) => void;
   setCustomInstructions: (text: string) => void;
@@ -185,6 +196,8 @@ export const useCopycatStore = create<CopycatState>((set, get) => ({
   selectedScenarioId: _persisted.selectedScenarioId,
   selectedPromptSet: _persisted.selectedPromptSet,
   tuningTarget: _persisted.tuningTarget,
+  promptEditingMode: _persisted.promptEditingMode,
+  customPromptPaths: _persisted.customPromptPaths,
   maxRounds: _persisted.maxRounds,
   lockedSettings: _persisted.lockedSettings,
   customInstructions: _persisted.customInstructions,
@@ -234,6 +247,14 @@ export const useCopycatStore = create<CopycatState>((set, get) => ({
   },
   setTuningTarget: (target) => {
     set({ tuningTarget: target });
+    get().persist();
+  },
+  setPromptEditingMode: (mode) => {
+    set({ promptEditingMode: mode });
+    get().persist();
+  },
+  setCustomPromptPaths: (paths) => {
+    set({ customPromptPaths: paths });
     get().persist();
   },
   setMaxRounds: (n) => {
@@ -441,7 +462,7 @@ export const useCopycatStore = create<CopycatState>((set, get) => ({
     if (typeof window === "undefined") return;
     const {
       referenceModelId, targetModelId, selectedScenarioId,
-      selectedPromptSet, tuningTarget, maxRounds, lockedSettings,
+      selectedPromptSet, tuningTarget, promptEditingMode, customPromptPaths, maxRounds, lockedSettings,
       customInstructions, startingSettings, referenceApiOverride, targetApiOverride,
     } = get();
     try {

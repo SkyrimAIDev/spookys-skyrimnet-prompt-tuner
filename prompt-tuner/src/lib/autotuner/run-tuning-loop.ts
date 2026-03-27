@@ -28,6 +28,8 @@ export async function runTuningLoop(
   lockedSettings?: (keyof import("@/types/config").AiTuningSettings)[],
   customInstructions?: string,
   ignoreFormatScoring?: boolean,
+  promptEditingMode?: import("@/types/autotuner").PromptEditingMode,
+  customPromptPaths?: string[],
 ) {
   const _t = (label: string) => console.log(`[tuner] ${label} @ ${Date.now()}`);
   _t("runTuningLoop START");
@@ -466,7 +468,7 @@ export async function runTuningLoop(
         // Fetch prompt file contents for the tuner LLM to analyze
         // Falls back to the source (active) set for files not yet in the temp set
         const promptSetPath = workingPromptSet || "";
-        const fetched = await fetchPromptContent(category, promptSetPath, sourceSetName || "", activeScenario.npcs);
+        const fetched = await fetchPromptContent(category, promptSetPath, sourceSetName || "", activeScenario.npcs, promptEditingMode, customPromptPaths);
         promptContent = fetched.content;
       }
 
@@ -487,6 +489,7 @@ export async function runTuningLoop(
           lockedSettings,
           customInstructions,
           ignoreFormatScoring,
+          promptEditingMode,
         });
 
         // Store proposal input messages

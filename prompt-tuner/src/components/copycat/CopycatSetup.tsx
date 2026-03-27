@@ -12,7 +12,8 @@ import { getBuiltinScenarios, findBuiltinScenario, getDefaultScenario } from "@/
 import { runCopycatLoop, stopCopycatLoop } from "@/lib/copycat/run-copycat-loop";
 import { CustomScenarioDialog } from "@/components/benchmark/CustomScenarioDialog";
 import { ScenarioSelector } from "@/components/shared/ScenarioSelector";
-import type { TuningTarget } from "@/types/autotuner";
+import type { TuningTarget, PromptEditingMode } from "@/types/autotuner";
+import { RECOMMENDED_PROMPTS } from "@/lib/autotuner/prompt-editing-modes";
 import type { AiTuningSettings } from "@/types/config";
 import {
   Square,
@@ -27,6 +28,13 @@ const TUNING_TARGET_OPTIONS: { value: TuningTarget; label: string; description: 
   { value: "settings", label: "Settings Only", description: "Tune inference parameters (temperature, penalties, etc.)" },
   { value: "prompts", label: "Prompts Only", description: "Tune prompt file content via search/replace edits" },
   { value: "both", label: "Both", description: "Tune both inference settings and prompt content" },
+];
+
+const PROMPT_EDITING_MODE_OPTIONS: { value: PromptEditingMode; label: string; description: string }[] = [
+  { value: "recommended", label: "Recommended", description: "Edit only the best prompts for this agent — safest and most effective" },
+  { value: "new_prompt", label: "New Prompt", description: "Create a new prompt file instead of editing existing ones" },
+  { value: "auto", label: "Auto", description: "Let the tuner decide which files to edit or whether to create new ones" },
+  { value: "custom", label: "Custom", description: "Choose specific prompt files to edit" },
 ];
 
 const ALL_SETTINGS_KEYS: { key: keyof AiTuningSettings; label: string }[] = [
@@ -56,6 +64,10 @@ export function CopycatSetup() {
   const setSelectedPromptSet = useCopycatStore((s) => s.setSelectedPromptSet);
   const tuningTarget = useCopycatStore((s) => s.tuningTarget);
   const setTuningTarget = useCopycatStore((s) => s.setTuningTarget);
+  const promptEditingMode = useCopycatStore((s) => s.promptEditingMode);
+  const setPromptEditingMode = useCopycatStore((s) => s.setPromptEditingMode);
+  const customPromptPaths = useCopycatStore((s) => s.customPromptPaths);
+  const setCustomPromptPaths = useCopycatStore((s) => s.setCustomPromptPaths);
   const maxRounds = useCopycatStore((s) => s.maxRounds);
   const setMaxRounds = useCopycatStore((s) => s.setMaxRounds);
   const lockedSettings = useCopycatStore((s) => s.lockedSettings);
@@ -93,6 +105,7 @@ export function CopycatSetup() {
       ? [selectedPromptSet, ...promptSets]
       : promptSets;
 
+  const showPromptEditing = tuningTarget === "prompts" || tuningTarget === "both";
   const showSettingsLocks = tuningTarget === "settings" || tuningTarget === "both";
 
   const handleToggleLock = (key: keyof AiTuningSettings) => {
@@ -131,6 +144,8 @@ export function CopycatSetup() {
       selectedPromptSet: resolvedPromptSet,
       lockedSettings,
       customInstructions,
+      promptEditingMode,
+      customPromptPaths,
     });
   };
 
@@ -475,6 +490,69 @@ export function CopycatSetup() {
                 );
               })}
             </div>
+
+            {/* Prompt editing mode */}
+            {showPromptEditing && (
+              <div className="space-y-1">
+                <div className="text-[10px] text-muted-foreground px-1">Prompt editing mode</div>
+                {PROMPT_EDITING_MODE_OPTIONS.map((opt) => {
+                  const isSelected = promptEditingMode === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={() => setPromptEditingMode(opt.value)}
+                      disabled={isRunning}
+                      className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[11px] transition-colors ${
+                        isSelected
+                          ? "bg-primary/10 border border-primary/30"
+                          : "hover:bg-accent/50 border border-transparent"
+                      } ${isRunning ? "opacity-50 cursor-not-allowed" : ""}`}
+                      title={opt.description}
+                    >
+                      <span
+                        className={`h-2.5 w-2.5 rounded-full border flex items-center justify-center shrink-0 ${
+                          isSelected
+                            ? "bg-primary border-primary"
+                            : "border-muted-foreground/30"
+                        }`}
+                      >
+                        {isSelected && (
+                          <span className="h-1 w-1 rounded-full bg-primary-foreground" />
+                        )}
+                      </span>
+                      <span className="truncate">{opt.label}</span>
+                    </button>
+                  );
+                })}
+                {promptEditingMode === "recommended" && (
+                  <div className="px-2 py-1 text-[9px] text-muted-foreground/70 space-y-0.5">
+                    {RECOMMENDED_PROMPTS.dialogue?.map((p) => (
+                      <div key={p} className="truncate">• {p.split("/").pop()}</div>
+                    ))}
+                  </div>
+                )}
+                {promptEditingMode === "custom" && (
+                  <div className="px-2 py-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full h-6 text-[10px]"
+                      onClick={() => {/* TODO: open picker dialog */}}
+                      disabled={isRunning}
+                    >
+                      Select Prompts ({customPromptPaths.length} selected)
+                    </Button>
+                    {customPromptPaths.length > 0 && (
+                      <div className="mt-1 space-y-0.5 text-[9px] text-muted-foreground/70">
+                        {customPromptPaths.map((p) => (
+                          <div key={p} className="truncate">• {p.split("/").pop()}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Max rounds */}
             <div className="space-y-1 px-1">

@@ -1,6 +1,6 @@
 import type { BenchmarkScenario, BenchmarkChatEntry } from "@/types/benchmark";
 import type { ChatMessage } from "@/types/llm";
-import type { TuningTarget } from "@/types/autotuner";
+import type { TuningTarget, PromptEditingMode } from "@/types/autotuner";
 import type { AiTuningSettings, ModelSlot } from "@/types/config";
 import type { CopycatDialogueTurn } from "@/types/copycat";
 import { buildMultiTurnRenderBody, getDefaultScenario, resolveScenarioNpcs } from "@/lib/benchmark/default-scenarios";
@@ -22,6 +22,8 @@ interface CopycatLoopParams {
   selectedPromptSet: string;
   lockedSettings: (keyof AiTuningSettings)[];
   customInstructions: string;
+  promptEditingMode?: PromptEditingMode;
+  customPromptPaths?: string[];
 }
 
 /**
@@ -133,6 +135,8 @@ export async function runCopycatLoop(params: CopycatLoopParams) {
     selectedPromptSet,
     lockedSettings,
     customInstructions,
+    promptEditingMode,
+    customPromptPaths,
   } = params;
 
   const store = useCopycatStore.getState();
@@ -282,7 +286,7 @@ export async function runCopycatLoop(params: CopycatLoopParams) {
       let promptContent = "";
       if (tuningTarget === "prompts" || tuningTarget === "both") {
         // Falls back to the source (active) set for files not yet in the temp set
-        const fetched = await fetchPromptContent("dialogue", workingPromptSet || "", sourceSetName || "", activeScenario.npcs);
+        const fetched = await fetchPromptContent("dialogue", workingPromptSet || "", sourceSetName || "", activeScenario.npcs, promptEditingMode, customPromptPaths);
         promptContent = fetched.content;
       }
 
@@ -301,6 +305,7 @@ export async function runCopycatLoop(params: CopycatLoopParams) {
           previousRounds,
           lockedSettings,
           customInstructions,
+          promptEditingMode,
         });
 
         const copycatLog = await sendLlmRequest({

@@ -4,6 +4,7 @@ import type { TuningTarget, TunerRound } from "@/types/autotuner";
 import type { BenchmarkCategory } from "@/types/benchmark";
 import { getCategoryDef } from "@/lib/benchmark/categories";
 import { AGENT_DESCRIPTIONS } from "@/types/config";
+import { RECOMMENDED_PROMPTS, PROMPT_EDITING_GUIDES, NEW_PROMPT_LOCATIONS } from "./prompt-editing-modes";
 
 /**
  * Build an agent-specific pipeline architecture guide that explains
@@ -148,6 +149,78 @@ const SETTINGS_DESCRIPTIONS: Record<keyof AiTuningSettings, string> = {
 };
 
 /**
+ * Build prompt editing rules based on the selected editing mode.
+ * Returns the rules section (numbered from 8 onward) to insert into the system prompt.
+ */
+export function buildPromptEditingRules(category: BenchmarkCategory, mode: import("@/types/autotuner").PromptEditingMode): string {
+  const recommended = RECOMMENDED_PROMPTS[category] || [];
+  const newLocation = NEW_PROMPT_LOCATIONS[category];
+
+  // Common rules for all modes
+  const commonRules = `9. **When modifying existing files:** Your \`search_text\` must be a SHORT, specific portion of plain-text content — never replace entire files or large blocks. Preserve all template syntax, section markers, and conditional branches exactly as they are. Only modify the natural-language instruction text between template blocks.
+10. **Prompt changes must be universal.** These prompts are used for THOUSANDS of different NPC dialogues across all of Skyrim — guards, merchants, innkeepers, quest characters, companions, etc. Proposed changes must improve quality for ANY NPC in ANY context. NEVER propose changes specific to the current benchmark scenario.
+11. **Keep additions concise.** SkyrimNet has a default max context of 4096 tokens. The official docs warn: "Too many rules = more hallucinations." Add the minimum instruction needed. A single clear sentence beats a paragraph of explanation.`;
+
+  // Build per-file editing guides for recommended prompts
+  const editingGuides = recommended
+    .map((p) => {
+      const filename = p.split("/").pop() || p;
+      const guide = PROMPT_EDITING_GUIDES[filename];
+      return guide ? `#### \`${filename}\`\n${guide}` : null;
+    })
+    .filter(Boolean)
+    .join("\n\n");
+
+  if (mode === "recommended") {
+    return `8. **ONLY edit the recommended prompts for this agent.** You may ONLY propose changes to these specific files:
+${recommended.map((p) => `   - \`${p.split("/").pop()}\``).join("\n")}
+   Do NOT create new files. Do NOT edit other files. Focus your edits on these files because they have the highest impact on this agent's output quality.
+
+${commonRules}
+
+## Recommended Prompt Editing Guide
+
+Each recommended prompt has specific safe-to-edit areas and template logic that must not be touched:
+
+${editingGuides}`;
+  }
+
+  if (mode === "new_prompt") {
+    return `8. **Create a NEW prompt file — do NOT edit existing files.** You must create one new submodule file instead of modifying any existing prompt.
+   - Directory: \`${newLocation?.directory || "."}\`
+   - ${newLocation?.numberingHint || "Use a 4-digit numeric prefix for file ordering."}
+   - To create a new file: use an empty \`search_text\` ("") and provide the full file content in \`replace_text\`
+   - Your new file should contain ONLY plain-text instructions — do NOT use template syntax unless you fully understand the Inja engine
+   - Do NOT duplicate instructions that already exist in the files shown below
+
+${commonRules}`;
+  }
+
+  if (mode === "custom") {
+    return `8. **ONLY edit the user-selected prompt files.** The user has chosen specific files they want you to modify. You may ONLY propose changes to those files. Do NOT create new files. Do NOT edit any other files under any circumstance.
+
+${commonRules}`;
+  }
+
+  // "auto" mode — enhanced with recommended prompt awareness
+  return `8. **Choose between editing an existing file or creating a new one.** First, read all existing files in the relevant submodule to check if your intended instructions are already covered or closely related to existing content. Then:
+   - **Edit an existing file** if your change naturally fits alongside its current instructions (e.g., adding a roleplay rule to the roleplay guidelines file, or tweaking an existing instruction). This avoids scattering related rules across multiple files.
+   - **Create a new file** when your instructions represent a genuinely new topic not covered by any existing file. Use a numbered name that places it in the right position within the submodule directory.
+   - **Recommended high-impact files for this agent:**
+${recommended.map((p) => `     - \`${p.split("/").pop()}\``).join("\n")}
+   - To create a new file: use an empty \`search_text\` ("") and put the full file content in \`replace_text\`
+   - NEVER duplicate instructions that already exist in another file
+
+${commonRules}
+
+## Recommended Prompt Editing Guide
+
+These are the highest-impact prompts for this agent. Prefer editing these over other files:
+
+${editingGuides}`;
+}
+
+/**
  * Build messages for the proposal step of auto-tuning.
  * The tuner LLM receives context about the agent, current settings/prompts,
  * previous rounds, and the latest benchmark + assessment, then proposes changes.
@@ -166,6 +239,7 @@ export function buildProposalMessages({
   lockedSettings = [],
   customInstructions = "",
   ignoreFormatScoring = false,
+  promptEditingMode = "auto",
 }: {
   category: BenchmarkCategory;
   tuningTarget: TuningTarget;
@@ -180,6 +254,7 @@ export function buildProposalMessages({
   lockedSettings?: (keyof AiTuningSettings)[];
   customInstructions?: string;
   ignoreFormatScoring?: boolean;
+  promptEditingMode?: import("@/types/autotuner").PromptEditingMode;
 }): ChatMessage[] {
   const catDef = getCategoryDef(category);
   const agentName = catDef?.label || category;
@@ -269,7 +344,14 @@ ${previousRounds.map((r) => {
     ? `Settings changes: ${r.proposal.settingsChanges.map((c) => `${c.parameter}: ${JSON.stringify(c.oldValue)} → ${JSON.stringify(c.newValue)}`).join(", ")}`
     : "No settings changes";
   const promptChanges = r.proposal?.promptChanges?.length
-    ? `Prompt changes: ${r.proposal.promptChanges.map((c) => `${c.filePath}: ${c.reason}`).join("; ")}`
+    ? `Prompt changes:\n${r.proposal.promptChanges.map((c) => {
+        const skipped = c.reason?.startsWith("[SKIPPED]") ? " **(SKIPPED — not applied)**" : "";
+        const fileName = c.filePath.split("/").pop() || c.filePath;
+        // Show the actual edits so the tuner knows what was changed
+        const searchSnippet = c.searchText ? c.searchText.substring(0, 150) : "(new file)";
+        const replaceSnippet = c.replaceText ? c.replaceText.substring(0, 150) : "(deleted)";
+        return `  • \`${fileName}\`: ${c.reason}${skipped}\n    Search: "${searchSnippet}${(c.searchText?.length || 0) > 150 ? "..." : ""}"\n    Replace: "${replaceSnippet}${(c.replaceText?.length || 0) > 150 ? "..." : ""}"`;
+      }).join("\n")}`
     : "No prompt changes";
   const assessmentSummary = r.assessmentText
     ? `Assessment:\n${r.assessmentText.substring(0, 1200)}${r.assessmentText.length > 1200 ? "..." : ""}`
@@ -312,15 +394,7 @@ ${canModifyPrompts ? `7. **Read and understand BEFORE editing.** The full conten
    - Respect the file's structure: if it has numbered sections, conditional branches, or a specific format, maintain that structure
    - NEVER edit files tagged **[DO NOT EDIT]** — they are pure template scaffolding shown only as context
    - For files tagged **[EDIT WITH CARE]** — only modify plain-text prose, never restructure template blocks
-8. **Choose between editing an existing file or creating a new one.** First, read all existing files in the relevant submodule to check if your intended instructions are already covered or closely related to existing content. Then:
-   - **Edit an existing file** if your change naturally fits alongside its current instructions (e.g., adding a roleplay rule to the roleplay guidelines file, or tweaking an existing instruction). This avoids scattering related rules across multiple files.
-   - **Create a new file** when your instructions represent a genuinely new topic not covered by any existing file (e.g., prose craft rules when no writing quality file exists). Use a numbered name that places it in the right position within the submodule directory.
-   - Available slots for new files: \`guidelines/0600-0800\` (between roleplay and format), \`user_final_instructions/0300-0600\` (between combat status and audio tags), \`system_head/0015\` (between task description and format rules)
-   - To create a new file: use an empty \`search_text\` ("") and put the full file content in \`replace_text\`
-   - NEVER duplicate instructions that already exist in another file — if a rule is already covered, modify the existing one instead
-9. **When modifying existing files:** Your \`search_text\` must be a SHORT, specific portion of plain-text content — never replace entire files or large blocks. Preserve all template syntax, section markers, and conditional branches exactly as they are. Only modify the natural-language instruction text between template blocks.
-10. **Prompt changes must be universal.** These prompts are used for THOUSANDS of different NPC dialogues across all of Skyrim — guards, merchants, innkeepers, quest characters, companions, etc. Proposed changes must improve dialogue quality for ANY NPC in ANY context. NEVER propose changes that are specific to the current benchmark scenario (e.g., referencing specific locations, quests, or NPC names from the test). Test your proposed instruction mentally: would it help a blacksmith AND a jarl AND a bard? If not, don't propose it.
-11. **Keep additions concise.** SkyrimNet has a default max context of 4096 tokens. The official docs warn: "Too many rules = more hallucinations." Add the minimum instruction needed. A single clear sentence beats a paragraph of explanation.
+${buildPromptEditingRules(category, promptEditingMode)}
 ## SkyrimNet Template Syntax (Inja)
 
 Prompt files use the Inja template engine (similar to Jinja2 but NOT identical). Key syntax rules:
