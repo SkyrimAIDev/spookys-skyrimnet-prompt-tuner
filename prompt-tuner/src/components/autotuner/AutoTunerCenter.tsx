@@ -290,6 +290,7 @@ export function AutoTunerCenter() {
   const postTuningStream = useAutoTunerStore((s) => s.postTuningStream);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const summaryRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom during streaming
   useEffect(() => {
@@ -297,6 +298,13 @@ export function AutoTunerCenter() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [explanationStream, assessmentStream, proposalStream, isRunning, rounds, statusMessage]);
+
+  // Auto-scroll to summary when it appears
+  useEffect(() => {
+    if ((sessionSummary || summaryStream) && summaryRef.current) {
+      summaryRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [sessionSummary, summaryStream ? "streaming" : ""]);
 
   if (phase === "idle" && rounds.length === 0) {
     return (
@@ -342,56 +350,63 @@ export function AutoTunerCenter() {
             />
           ))}
 
-          {/* Session Summary — appears after all rounds */}
-          {(sessionSummary || summaryStream) && (
-            <div className="rounded-lg border bg-card overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 border-b">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                <span className="text-xs font-medium text-emerald-400">Session Summary</span>
-              </div>
-              <div className="px-4 py-3 text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">
-                {sessionSummary || summaryStream}
-                {!sessionSummary && summaryStream && (
-                  <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Post-Tuning Chat — appears after summary */}
-          {phase === "complete" && !isRunning && (
-            <div className="rounded-lg border bg-card overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-2 border-b">
-                <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs font-medium">Ask the Tuner</span>
-              </div>
-              <div className="p-3 space-y-2">
-                {postTuningMessages.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={`text-xs rounded-md px-3 py-2 ${
-                      msg.role === "user"
-                        ? "bg-primary/10 border border-primary/20 ml-8"
-                        : "bg-muted/50 border border-muted mr-8"
-                    }`}
-                  >
-                    <div className="text-[9px] text-muted-foreground mb-0.5 font-medium">
-                      {msg.role === "user" ? "You" : "Tuner"}
-                    </div>
-                    <div className="whitespace-pre-wrap">{msg.content}</div>
+          {/* Session Summary + Chat — fills the panel so user doesn't need to scroll to find it */}
+          {(sessionSummary || summaryStream || (phase === "complete" && !isRunning)) && (
+            <div ref={summaryRef} className="min-h-[calc(100vh-8rem)] flex flex-col gap-3">
+              {/* Session Summary */}
+              {(sessionSummary || summaryStream) && (
+                <div className="rounded-lg border bg-card overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 border-b">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                    <span className="text-xs font-medium text-emerald-400">Session Summary</span>
                   </div>
-                ))}
-                {postTuningStream && (
-                  <div className="text-xs rounded-md px-3 py-2 bg-muted/50 border border-muted mr-8">
-                    <div className="text-[9px] text-muted-foreground mb-0.5 font-medium">Tuner</div>
-                    <div className="whitespace-pre-wrap">
-                      {postTuningStream}
+                  <div className="px-4 py-3 text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">
+                    {sessionSummary || summaryStream}
+                    {!sessionSummary && summaryStream && (
                       <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
-                    </div>
+                    )}
                   </div>
-                )}
-                <PostTuningChatInput />
-              </div>
+                </div>
+              )}
+
+              {/* Post-Tuning Chat — grows to fill remaining space */}
+              {phase === "complete" && !isRunning && (
+                <div className="rounded-lg border bg-card overflow-hidden flex-1 flex flex-col">
+                  <div className="flex items-center gap-2 px-3 py-2 border-b">
+                    <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs font-medium">Ask the Tuner</span>
+                  </div>
+                  <div className="flex-1 p-3 space-y-2 flex flex-col">
+                    <div className="flex-1 space-y-2 overflow-y-auto">
+                      {postTuningMessages.map((msg, i) => (
+                        <div
+                          key={i}
+                          className={`text-xs rounded-md px-3 py-2 ${
+                            msg.role === "user"
+                              ? "bg-primary/10 border border-primary/20 ml-8"
+                              : "bg-muted/50 border border-muted mr-8"
+                          }`}
+                        >
+                          <div className="text-[9px] text-muted-foreground mb-0.5 font-medium">
+                            {msg.role === "user" ? "You" : "Tuner"}
+                          </div>
+                          <div className="whitespace-pre-wrap">{msg.content}</div>
+                        </div>
+                      ))}
+                      {postTuningStream && (
+                        <div className="text-xs rounded-md px-3 py-2 bg-muted/50 border border-muted mr-8">
+                          <div className="text-[9px] text-muted-foreground mb-0.5 font-medium">Tuner</div>
+                          <div className="whitespace-pre-wrap">
+                            {postTuningStream}
+                            <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <PostTuningChatInput />
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
