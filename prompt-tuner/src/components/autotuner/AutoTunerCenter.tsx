@@ -196,12 +196,29 @@ function PostTuningChatInput() {
       ? Object.entries(currentSettings).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join("\n")
       : "No settings available.";
 
+    // Collect current prompt file contents from round data
+    const promptFiles = new Map<string, string>();
+    for (const r of rounds) {
+      for (const pc of r.proposal?.promptChanges || []) {
+        if (pc.modifiedContent) {
+          promptFiles.set(pc.filePath, pc.modifiedContent);
+        } else if (pc.originalContent) {
+          promptFiles.set(pc.filePath, pc.originalContent);
+        }
+      }
+    }
+    const promptFileSection = promptFiles.size > 0
+      ? `## Current Prompt Files\n\n${[...promptFiles.entries()].map(
+          ([path, content]) => `### \`${path.split("/").slice(-2).join("/")}\`\n\`\`\`\n${content.substring(0, 3000)}${content.length > 3000 ? "\n... (truncated)" : ""}\n\`\`\``
+        ).join("\n\n")}`
+      : "";
+
     const systemMsg = `You are the SkyrimNet tuner agent that just completed a tuning session. You can answer questions AND make changes.
 
 ## Your Capabilities
 - **Answer questions** about the session, explain reasoning, discuss trade-offs
 - **Modify settings** by including a JSON block with \`settings_changes\`
-- **Edit prompts** by including a JSON block with \`prompt_changes\`
+- **Edit prompts** by including a JSON block with \`prompt_changes\` — use search_text COPIED EXACTLY from the file content below
 
 When the user asks you to make changes, include a JSON block in your response:
 \`\`\`json
@@ -210,7 +227,7 @@ When the user asks you to make changes, include a JSON block in your response:
     { "parameter": "temperature", "old_value": 1.8, "new_value": 1.6, "reason": "reduce randomness" }
   ],
   "prompt_changes": [
-    { "file_path": "/path/to/file.prompt", "search_text": "text to find", "replace_text": "replacement", "reason": "why" }
+    { "file_path": "/full/path/to/file.prompt", "search_text": "exact text from file", "replace_text": "replacement", "reason": "why" }
   ]
 }
 \`\`\`
@@ -220,6 +237,8 @@ If you're just answering a question (no changes needed), respond normally withou
 
 ## Current Settings
 ${settingsInfo}
+
+${promptFileSection}
 
 ## Session Summary
 ${summary || "No summary available."}
@@ -346,7 +365,7 @@ export function AutoTunerCenter() {
         )}
       </div>
 
-      {/* Rounds */}
+      {/* Rounds + Summary in scrollable area */}
       <ScrollArea className="flex-1 overflow-hidden">
         <div ref={scrollRef} className="p-4 space-y-3 min-w-0">
           {rounds.map((round, idx) => (
@@ -361,60 +380,52 @@ export function AutoTunerCenter() {
             />
           ))}
 
-          {/* Session Summary + Chat — fills the panel */}
-          {(sessionSummary || summaryStream || (phase === "complete" && !isRunning)) && (
-            <div ref={summaryRef} className="min-h-[calc(100vh-8rem)] flex flex-col gap-3">
-              {/* Structured Summary */}
-              {(sessionSummary || summaryStream) && (
-                <SessionSummaryPanel
-                  summaryText={sessionSummary}
-                  summaryStream={summaryStream}
-                  rounds={rounds}
-                  originalSettings={originalSettings}
-                  finalSettings={workingSettings}
-                />
-              )}
+          {/* Session Summary */}
+          {(sessionSummary || summaryStream) && (
+            <div ref={summaryRef}>
+              <SessionSummaryPanel
+                summaryText={sessionSummary}
+                summaryStream={summaryStream}
+                rounds={rounds}
+                originalSettings={originalSettings}
+                finalSettings={workingSettings}
+              />
+            </div>
+          )}
 
-              {/* Post-Tuning Chat — fixed input at bottom */}
-              {phase === "complete" && !isRunning && (
-                <div className="rounded-lg border bg-card overflow-hidden flex-1 flex flex-col min-h-[200px]">
-                  <div className="flex items-center gap-2 px-3 py-2 border-b shrink-0">
-                    <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-xs font-medium">Ask the Tuner</span>
+          {/* Chat messages (scrollable part) */}
+          {phase === "complete" && !isRunning && (
+            <div className="space-y-2" ref={chatScrollRef}>
+              <div className="flex items-center gap-2 px-1">
+                <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs font-medium">Ask the Tuner</span>
+              </div>
+              {postTuningMessages.length === 0 && !postTuningStream && (
+                <div className="text-xs text-muted-foreground/50 text-center py-4">
+                  Ask questions about the session or request further changes.
+                </div>
+              )}
+              {postTuningMessages.map((msg, i) => (
+                <div
+                  key={i}
+                  className={`text-xs rounded-md px-3 py-2 ${
+                    msg.role === "user"
+                      ? "bg-primary/10 border border-primary/20 ml-8"
+                      : "bg-muted/50 border border-muted mr-8"
+                  }`}
+                >
+                  <div className="text-[9px] text-muted-foreground mb-0.5 font-medium">
+                    {msg.role === "user" ? "You" : "Tuner"}
                   </div>
-                  <div className="flex-1 overflow-y-auto p-3 space-y-2" ref={chatScrollRef}>
-                    {postTuningMessages.length === 0 && !postTuningStream && (
-                      <div className="text-xs text-muted-foreground/50 text-center py-4">
-                        Ask questions about the session or request further changes.
-                      </div>
-                    )}
-                    {postTuningMessages.map((msg, i) => (
-                      <div
-                        key={i}
-                        className={`text-xs rounded-md px-3 py-2 ${
-                          msg.role === "user"
-                            ? "bg-primary/10 border border-primary/20 ml-8"
-                            : "bg-muted/50 border border-muted mr-8"
-                        }`}
-                      >
-                        <div className="text-[9px] text-muted-foreground mb-0.5 font-medium">
-                          {msg.role === "user" ? "You" : "Tuner"}
-                        </div>
-                        <div className="whitespace-pre-wrap">{msg.content}</div>
-                      </div>
-                    ))}
-                    {postTuningStream && (
-                      <div className="text-xs rounded-md px-3 py-2 bg-muted/50 border border-muted mr-8">
-                        <div className="text-[9px] text-muted-foreground mb-0.5 font-medium">Tuner</div>
-                        <div className="whitespace-pre-wrap">
-                          {postTuningStream}
-                          <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="border-t p-2 shrink-0">
-                    <PostTuningChatInput />
+                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                </div>
+              ))}
+              {postTuningStream && (
+                <div className="text-xs rounded-md px-3 py-2 bg-muted/50 border border-muted mr-8">
+                  <div className="text-[9px] text-muted-foreground mb-0.5 font-medium">Tuner</div>
+                  <div className="whitespace-pre-wrap">
+                    {postTuningStream}
+                    <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
                   </div>
                 </div>
               )}
@@ -422,6 +433,13 @@ export function AutoTunerCenter() {
           )}
         </div>
       </ScrollArea>
+
+      {/* Chat input — pinned at bottom outside ScrollArea */}
+      {phase === "complete" && !isRunning && (
+        <div className="border-t p-2 shrink-0">
+          <PostTuningChatInput />
+        </div>
+      )}
     </div>
   );
 }
