@@ -20,6 +20,9 @@ import {
   ChevronRight,
   Send,
   MessageSquare,
+  Square,
+  Copy,
+  Check,
 } from "lucide-react";
 import type { ChatMessage } from "@/types/llm";
 
@@ -173,14 +176,40 @@ async function tryApplyChatChanges(response: string): Promise<string | null> {
   return applied.length > 0 ? applied.join(", ") : null;
 }
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      className="opacity-0 group-hover/msg:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+      title="Copy"
+    >
+      {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+    </button>
+  );
+}
+
 function PostTuningChatInput() {
   const [input, setInput] = useState("");
   const isStreaming = useAutoTunerStore((s) => s.isPostTuningStreaming);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text || isStreaming) return;
     setInput("");
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     const state = useAutoTunerStore.getState();
     state.addPostTuningMessage({ role: "user", content: text });
@@ -196,15 +225,11 @@ function PostTuningChatInput() {
       ? Object.entries(currentSettings).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join("\n")
       : "No settings available.";
 
-    // Collect current prompt file contents from round data
     const promptFiles = new Map<string, string>();
     for (const r of rounds) {
       for (const pc of r.proposal?.promptChanges || []) {
-        if (pc.modifiedContent) {
-          promptFiles.set(pc.filePath, pc.modifiedContent);
-        } else if (pc.originalContent) {
-          promptFiles.set(pc.filePath, pc.originalContent);
-        }
+        if (pc.modifiedContent) promptFiles.set(pc.filePath, pc.modifiedContent);
+        else if (pc.originalContent) promptFiles.set(pc.filePath, pc.originalContent);
       }
     }
     const promptFileSection = promptFiles.size > 0
@@ -257,25 +282,36 @@ ${rounds.map((r) => `Round ${r.roundNumber}: ${r.proposal?.reasoning || "N/A"}`)
         messages,
         agent: "tuner",
         onChunk: (chunk) => { useAutoTunerStore.getState().appendPostTuningStream(chunk); },
+        signal: controller.signal,
       });
       if (!log.error) {
         useAutoTunerStore.getState().addPostTuningMessage({ role: "assistant", content: log.response });
-
-        // Try to apply any changes from the response
         const applyResult = await tryApplyChatChanges(log.response);
         if (applyResult) {
-          useAutoTunerStore.getState().addPostTuningMessage({
-            role: "assistant",
-            content: `✅ Changes applied: ${applyResult}`,
-          });
+          useAutoTunerStore.getState().addPostTuningMessage({ role: "assistant", content: `Changes applied: ${applyResult}` });
         }
       }
-    } catch { /* non-critical */ }
-    finally {
+    } catch {
+      // If aborted, save whatever was streamed so far
+      const partial = useAutoTunerStore.getState().postTuningStream;
+      if (partial) {
+        useAutoTunerStore.getState().addPostTuningMessage({ role: "assistant", content: partial });
+      }
+    } finally {
       useAutoTunerStore.getState().setIsPostTuningStreaming(false);
       useAutoTunerStore.getState().clearPostTuningStream();
+      abortRef.current = null;
     }
   }, [input, isStreaming]);
+
+  // Escape key to stop
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isStreaming) handleStop();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isStreaming, handleStop]);
 
   return (
     <div className="flex items-center gap-1.5">
@@ -287,9 +323,15 @@ ${rounds.map((r) => `Round ${r.roundNumber}: ${r.proposal?.reasoning || "N/A"}`)
         className="h-7 text-xs flex-1"
         disabled={isStreaming}
       />
-      <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={handleSend} disabled={!input.trim() || isStreaming}>
-        {isStreaming ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-      </Button>
+      {isStreaming ? (
+        <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={handleStop} title="Stop (Esc)">
+          <Square className="h-3 w-3" />
+        </Button>
+      ) : (
+        <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={handleSend} disabled={!input.trim()}>
+          <Send className="h-3 w-3" />
+        </Button>
+      )}
     </div>
   );
 }
@@ -329,10 +371,10 @@ export function AutoTunerCenter() {
     }
   }, [sessionSummary, summaryStream ? "streaming" : ""]);
 
-  // Auto-scroll chat to bottom on new messages
+  // Auto-scroll to bottom on new chat messages or streaming
   useEffect(() => {
-    if (chatScrollRef.current) {
-      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    if ((postTuningMessages.length > 0 || postTuningStream) && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [postTuningMessages, postTuningStream]);
 
@@ -408,14 +450,19 @@ export function AutoTunerCenter() {
               {postTuningMessages.map((msg, i) => (
                 <div
                   key={i}
-                  className={`text-xs rounded-md px-3 py-2 ${
+                  className={`group/msg text-xs rounded-md px-3 py-2 ${
                     msg.role === "user"
                       ? "bg-primary/10 border border-primary/20 ml-8"
                       : "bg-muted/50 border border-muted mr-8"
                   }`}
                 >
-                  <div className="text-[9px] text-muted-foreground mb-0.5 font-medium">
-                    {msg.role === "user" ? "You" : "Tuner"}
+                  <div className="flex items-center justify-between mb-0.5">
+                    <div className="text-[9px] text-muted-foreground font-medium">
+                      {msg.role === "user" ? "You" : "Tuner"}
+                    </div>
+                    {msg.role === "assistant" && (
+                      <CopyButton text={msg.content} />
+                    )}
                   </div>
                   <div className="whitespace-pre-wrap">{msg.content}</div>
                 </div>

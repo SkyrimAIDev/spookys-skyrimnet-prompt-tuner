@@ -21,6 +21,9 @@ import {
   ChevronRight,
   X,
   AlertTriangle,
+  Square,
+  Copy,
+  Check,
   Send,
   MessageSquare,
 } from "lucide-react";
@@ -95,6 +98,24 @@ function CopycatCostNotice({ onDismiss }: { onDismiss: () => void }) {
   );
 }
 
+function CopycatCopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      className="opacity-0 group-hover/msg:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+      title="Copy"
+    >
+      {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+    </button>
+  );
+}
+
 /**
  * Try to extract and apply a changes JSON block from the copycat chat response.
  */
@@ -150,11 +171,17 @@ async function tryCopycatApplyChatChanges(response: string): Promise<string | nu
 function CopycatPostTuningChatInput() {
   const [input, setInput] = useState("");
   const isStreaming = useCopycatStore((s) => s.isPostTuningStreaming);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const handleStop = useCallback(() => { abortRef.current?.abort(); }, []);
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text || isStreaming) return;
     setInput("");
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     const state = useCopycatStore.getState();
     state.addPostTuningMessage({ role: "user", content: text });
@@ -231,6 +258,7 @@ ${rounds.map((r) => `Round ${r.roundNumber} (${r.effectivenessScore ?? "?"}%): $
         messages,
         agent: "tuner",
         onChunk: (chunk) => { useCopycatStore.getState().appendPostTuningStream(chunk); },
+        signal: controller.signal,
       });
       if (!log.error) {
         useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: log.response });
@@ -239,12 +267,25 @@ ${rounds.map((r) => `Round ${r.roundNumber} (${r.effectivenessScore ?? "?"}%): $
           useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: `Changes applied: ${applyResult}` });
         }
       }
-    } catch { /* non-critical */ }
-    finally {
+    } catch {
+      const partial = useCopycatStore.getState().postTuningStream;
+      if (partial) {
+        useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: partial });
+      }
+    } finally {
       useCopycatStore.getState().setIsPostTuningStreaming(false);
       useCopycatStore.getState().clearPostTuningStream();
+      abortRef.current = null;
     }
   }, [input, isStreaming]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isStreaming) handleStop();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isStreaming, handleStop]);
 
   return (
     <div className="flex items-center gap-1.5">
@@ -256,9 +297,15 @@ ${rounds.map((r) => `Round ${r.roundNumber} (${r.effectivenessScore ?? "?"}%): $
         className="h-7 text-xs flex-1"
         disabled={isStreaming}
       />
-      <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={handleSend} disabled={!input.trim() || isStreaming}>
-        {isStreaming ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-      </Button>
+      {isStreaming ? (
+        <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={handleStop} title="Stop (Esc)">
+          <Square className="h-3 w-3" />
+        </Button>
+      ) : (
+        <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={handleSend} disabled={!input.trim()}>
+          <Send className="h-3 w-3" />
+        </Button>
+      )}
     </div>
   );
 }
@@ -308,10 +355,10 @@ export function CopycatCenter() {
     }
   }, [sessionSummary, summaryStream ? "streaming" : ""]);
 
-  // Auto-scroll chat to bottom on new messages
+  // Auto-scroll to bottom on new chat messages or streaming
   useEffect(() => {
-    if (chatScrollRef.current) {
-      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    if ((postTuningMessages.length > 0 || postTuningStream) && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [postTuningMessages, postTuningStream]);
 
@@ -390,14 +437,19 @@ export function CopycatCenter() {
               {postTuningMessages.map((msg, i) => (
                 <div
                   key={i}
-                  className={`text-xs rounded-md px-3 py-2 ${
+                  className={`group/msg text-xs rounded-md px-3 py-2 ${
                     msg.role === "user"
                       ? "bg-primary/10 border border-primary/20 ml-8"
                       : "bg-muted/50 border border-muted mr-8"
                   }`}
                 >
-                  <div className="text-[9px] text-muted-foreground mb-0.5 font-medium">
-                    {msg.role === "user" ? "You" : "Tuner"}
+                  <div className="flex items-center justify-between mb-0.5">
+                    <div className="text-[9px] text-muted-foreground font-medium">
+                      {msg.role === "user" ? "You" : "Tuner"}
+                    </div>
+                    {msg.role === "assistant" && (
+                      <CopycatCopyButton text={msg.content} />
+                    )}
                   </div>
                   <div className="whitespace-pre-wrap">{msg.content}</div>
                 </div>
