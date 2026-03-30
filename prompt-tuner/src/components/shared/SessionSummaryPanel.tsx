@@ -5,6 +5,7 @@ import type { AiTuningSettings } from "@/types/config";
 import { CheckCircle2, Loader2 } from "lucide-react";
 
 interface SummaryRound {
+  roundNumber: number;
   proposal: TunerProposal | null;
 }
 
@@ -26,7 +27,7 @@ export function SessionSummaryPanel({
   const text = summaryText || summaryStream;
   const isStreaming = !summaryText && !!summaryStream;
 
-  // Collect all settings changes across rounds (final diff)
+  // Final settings diff
   const settingsDiff: { key: string; oldVal: string; newVal: string }[] = [];
   if (originalSettings && finalSettings) {
     for (const [k, v] of Object.entries(finalSettings)) {
@@ -37,10 +38,12 @@ export function SessionSummaryPanel({
     }
   }
 
-  // Collect all prompt changes across rounds (only applied ones)
-  const allPromptChanges = rounds.flatMap((r) =>
-    (r.proposal?.promptChanges || []).filter((c) => !c.reason?.startsWith("[SKIPPED]"))
-  );
+  // Rounds that had changes
+  const roundsWithChanges = rounds.filter((r) => {
+    const sc = r.proposal?.settingsChanges?.length || 0;
+    const pc = r.proposal?.promptChanges?.filter((c) => !c.reason?.startsWith("[SKIPPED]")).length || 0;
+    return sc > 0 || pc > 0;
+  });
 
   // Parse the narrative into sections
   const sections = parseSections(text);
@@ -56,7 +59,81 @@ export function SessionSummaryPanel({
       </div>
 
       <div className="p-4 space-y-4">
-        {/* Final Settings Changes */}
+        {/* Per-Round Changes */}
+        {roundsWithChanges.length > 0 && (
+          <div className="space-y-3">
+            {roundsWithChanges.map((r) => {
+              const settingsChanges = r.proposal?.settingsChanges || [];
+              const promptChanges = (r.proposal?.promptChanges || []).filter(
+                (c) => !c.reason?.startsWith("[SKIPPED]")
+              );
+              return (
+                <div key={r.roundNumber} className="space-y-1.5">
+                  <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    Round {r.roundNumber}
+                  </div>
+
+                  {/* Settings changes for this round */}
+                  {settingsChanges.length > 0 && (
+                    <div className="rounded border overflow-hidden">
+                      <table className="w-full text-xs table-fixed">
+                        <thead>
+                          <tr className="bg-muted/50">
+                            <th className="text-left px-2 py-1 font-medium w-[100px]">Parameter</th>
+                            <th className="text-left px-2 py-1 font-medium w-[50px]">Old</th>
+                            <th className="text-left px-2 py-1 font-medium w-[50px]">New</th>
+                            <th className="text-left px-2 py-1 font-medium">Reason</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {settingsChanges.map((sc, i) => (
+                            <tr key={i} className="border-t">
+                              <td className="px-2 py-1 font-mono text-[10px]">{sc.parameter}</td>
+                              <td className="px-2 py-1 text-red-400 font-mono text-[10px]">{JSON.stringify(sc.oldValue)}</td>
+                              <td className="px-2 py-1 text-green-400 font-mono text-[10px]">{JSON.stringify(sc.newValue)}</td>
+                              <td className="px-2 py-1 text-muted-foreground break-words text-[10px]">{sc.reason}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Prompt changes for this round */}
+                  {promptChanges.length > 0 && (
+                    <div className="space-y-1.5">
+                      {promptChanges.map((pc, i) => (
+                        <div key={i} className="rounded border p-2 space-y-1 min-w-0 overflow-hidden">
+                          <div className="text-[10px] font-mono text-muted-foreground truncate" title={pc.filePath}>
+                            {pc.filePath.split("/").slice(-2).join("/")}
+                          </div>
+                          <div className="text-xs text-muted-foreground break-words">{pc.reason}</div>
+                          {pc.searchText && (
+                            <div className="grid grid-cols-2 gap-1 text-[10px] min-w-0">
+                              <div className="bg-red-500/10 rounded p-1.5 font-mono whitespace-pre-wrap max-h-24 overflow-auto break-all min-w-0">
+                                {pc.searchText}
+                              </div>
+                              <div className="bg-green-500/10 rounded p-1.5 font-mono whitespace-pre-wrap max-h-24 overflow-auto break-all min-w-0">
+                                {pc.replaceText}
+                              </div>
+                            </div>
+                          )}
+                          {!pc.searchText && pc.replaceText && (
+                            <div className="bg-green-500/10 rounded p-1.5 font-mono whitespace-pre-wrap max-h-24 overflow-auto break-all min-w-0 text-[10px]">
+                              {pc.replaceText.substring(0, 300)}{pc.replaceText.length > 300 ? "..." : ""}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Final Settings — shows the cumulative result */}
         {settingsDiff.length > 0 && (
           <div className="space-y-1.5">
             <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -67,8 +144,8 @@ export function SessionSummaryPanel({
                 <thead>
                   <tr className="bg-muted/50">
                     <th className="text-left px-2 py-1 font-medium w-[120px]">Parameter</th>
-                    <th className="text-left px-2 py-1 font-medium w-[60px]">Before</th>
-                    <th className="text-left px-2 py-1 font-medium w-[60px]">After</th>
+                    <th className="text-left px-2 py-1 font-medium w-[60px]">Original</th>
+                    <th className="text-left px-2 py-1 font-medium w-[60px]">Final</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -81,40 +158,6 @@ export function SessionSummaryPanel({
                   ))}
                 </tbody>
               </table>
-            </div>
-          </div>
-        )}
-
-        {/* Final Prompt Changes */}
-        {allPromptChanges.length > 0 && (
-          <div className="space-y-1.5">
-            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-              Prompt Changes
-            </div>
-            <div className="space-y-2">
-              {allPromptChanges.map((pc, i) => (
-                <div key={i} className="rounded border p-2 space-y-1 min-w-0 overflow-hidden">
-                  <div className="text-[10px] font-mono text-muted-foreground truncate" title={pc.filePath}>
-                    {pc.filePath.split("/").slice(-2).join("/")}
-                  </div>
-                  <div className="text-xs text-muted-foreground break-words">{pc.reason}</div>
-                  {pc.searchText && (
-                    <div className="grid grid-cols-2 gap-1 text-[10px] min-w-0">
-                      <div className="bg-red-500/10 rounded p-1.5 font-mono whitespace-pre-wrap max-h-24 overflow-auto break-all min-w-0">
-                        {pc.searchText}
-                      </div>
-                      <div className="bg-green-500/10 rounded p-1.5 font-mono whitespace-pre-wrap max-h-24 overflow-auto break-all min-w-0">
-                        {pc.replaceText}
-                      </div>
-                    </div>
-                  )}
-                  {!pc.searchText && pc.replaceText && (
-                    <div className="bg-green-500/10 rounded p-1.5 font-mono whitespace-pre-wrap max-h-24 overflow-auto break-all min-w-0 text-[10px]">
-                      {pc.replaceText.substring(0, 300)}{pc.replaceText.length > 300 ? "..." : ""}
-                    </div>
-                  )}
-                </div>
-              ))}
             </div>
           </div>
         )}

@@ -449,6 +449,7 @@ export function AutoTunerCenter() {
               key={round.roundNumber}
               round={round}
               isCurrentRound={idx === rounds.length - 1 && isRunning}
+              forceCollapse={idx === rounds.length - 1 && !isRunning && !!(sessionSummary || summaryStream)}
               explanationStream={idx === rounds.length - 1 ? explanationStream : ""}
               assessmentStream={idx === rounds.length - 1 ? assessmentStream : ""}
               proposalStream={idx === rounds.length - 1 ? proposalStream : ""}
@@ -528,6 +529,7 @@ export function AutoTunerCenter() {
 function TunerRoundCard({
   round,
   isCurrentRound,
+  forceCollapse = false,
   explanationStream,
   assessmentStream,
   proposalStream,
@@ -535,6 +537,7 @@ function TunerRoundCard({
 }: {
   round: TunerRound;
   isCurrentRound: boolean;
+  forceCollapse?: boolean;
   explanationStream: string;
   assessmentStream: string;
   proposalStream: string;
@@ -555,6 +558,17 @@ function TunerRoundCard({
   const [explanationOpen, setExplanationOpen] = useState(activeSection === "explanation");
   const [assessOpen, setAssessOpen] = useState(activeSection === "assessment");
   const [proposalOpen, setProposalOpen] = useState(activeSection === "proposal");
+
+  // Collapse all sections when summary appears
+  useEffect(() => {
+    if (forceCollapse) {
+      setPromptOpen(false);
+      setResponseOpen(false);
+      setExplanationOpen(false);
+      setAssessOpen(false);
+      setProposalOpen(false);
+    }
+  }, [forceCollapse]);
 
   // Auto-expand the active section and collapse others when the phase advances.
   // When activeSection becomes null (run ended), skip — keeps the last active section open.
