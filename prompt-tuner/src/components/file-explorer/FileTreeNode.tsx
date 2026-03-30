@@ -100,27 +100,41 @@ export function FileTreeNode({ node, depth }: FileTreeNodeProps) {
       store.setActiveFile(fileNode.path);
       return;
     }
-    store.setLoadingFile(true);
+
+    // Open tab immediately with placeholder so the UI switches instantly
+    store.openFile({
+      path: fileNode.path,
+      name: fileNode.name,
+      displayName: fileNode.displayName || fileNode.name,
+      content: "",
+      originalContent: "",
+      isDirty: false,
+      isReadOnly: fileNode.isReadOnly ?? false,
+      isPreview: asPreview,
+    });
+
+    // Fetch content in the background and fill in
     try {
       const res = await fetch(
         `/api/files/read?path=${encodeURIComponent(fileNode.path)}`
       );
       const data = await res.json();
       if (data.error) { console.error(data.error); return; }
-      store.openFile({
-        path: fileNode.path,
-        name: fileNode.name,
-        displayName: fileNode.displayName || fileNode.name,
-        content: data.content,
-        originalContent: data.content,
-        isDirty: false,
-        isReadOnly: data.isReadOnly,
-        isPreview: asPreview,
-      });
+
+      // Update the already-open tab with the fetched content
+      const current = useFileStore.getState();
+      const file = current.openFiles.find((f) => f.path === fileNode.path);
+      if (file) {
+        useFileStore.setState({
+          openFiles: current.openFiles.map((f) =>
+            f.path === fileNode.path
+              ? { ...f, content: data.content, originalContent: data.content, isReadOnly: data.isReadOnly }
+              : f
+          ),
+        });
+      }
     } catch (error) {
-      console.error("Failed to open file:", error);
-    } finally {
-      store.setLoadingFile(false);
+      console.error("Failed to load file content:", error);
     }
   }, []);
 
