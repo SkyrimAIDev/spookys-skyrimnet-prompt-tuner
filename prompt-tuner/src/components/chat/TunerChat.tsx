@@ -27,11 +27,7 @@ import {
   Check,
 } from "lucide-react";
 
-interface ToolCall {
-  name: string;
-  args: Record<string, string>;
-  result?: string;
-}
+import { parseToolCalls, stripToolCallXml, type ToolCall } from "@/lib/llm/tool-parser";
 
 interface TunerMessage {
   id: string;
@@ -48,9 +44,7 @@ function buildFileContext(openFiles: { name: string; displayName: string; conten
   return `\n\nThe following files are currently open in the editor. Use them as context when answering:\n\n${blocks.join("\n\n")}`;
 }
 
-function stripToolCallXml(text: string): string {
-  return text.replace(/<function_calls>[\s\S]*?<\/function_calls>/g, "").trim();
-}
+// stripToolCallXml imported from @/lib/llm/tool-parser
 
 export function TunerChat() {
   const [messages, setMessages] = useState<TunerMessage[]>([]);
@@ -102,11 +96,13 @@ export function TunerChat() {
     setIsProcessing(true);
     setStreamingText("");
 
+    const MAX_ITERATIONS = 8;
+
     try {
       const fileContext = buildFileContext(openFiles);
       const systemContent = TUNER_SYSTEM_PROMPT + fileContext;
 
-      const llmMessages: ChatMessage[] = [
+      let currentMessages: ChatMessage[] = [
         { role: "system", content: systemContent },
         ...messages.map(
           (m): ChatMessage => ({
@@ -120,43 +116,78 @@ export function TunerChat() {
       const abortController = new AbortController();
       abortRef.current = abortController;
 
-      const log = await sendLlmRequest({
-        messages: llmMessages,
-        agent: "tuner",
-        onChunk: (chunk) => setStreamingText((prev) => prev + chunk),
-        signal: abortController.signal,
-      });
+      for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+        setStreamingText("");
 
-      const response = log.response || "";
-      setStreamingText("");
+        const log = await sendLlmRequest({
+          messages: currentMessages,
+          agent: "tuner",
+          onChunk: (chunk) => setStreamingText((prev) => prev + chunk),
+          signal: abortController.signal,
+        });
 
-      if (log.error) {
-        setMessages((prev) => [
-          ...prev,
-          { id: `${Date.now()}-error`, role: "system", content: `Error: ${log.error}` },
-        ]);
-      } else {
+        const response = log.response || "";
+        setStreamingText("");
+
+        if (log.error) {
+          setMessages((prev) => [
+            ...prev,
+            { id: `${Date.now()}-error`, role: "system", content: `Error: ${log.error}` },
+          ]);
+          break;
+        }
+
         const toolCalls = parseToolCalls(response);
-        const displayContent = toolCalls.length > 0 ? stripToolCallXml(response) : response;
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `${Date.now()}-assistant`,
-            role: "assistant",
-            content: displayContent,
-            toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-          },
-        ]);
 
-        if (toolCalls.length > 0) {
-          for (const call of toolCalls) {
-            try {
-              call.result = await executeToolCall(call.name, call.args, openFiles);
-            } catch (e) {
-              call.result = `Error: ${(e as Error).message}`;
-            }
+        if (toolCalls.length === 0) {
+          // No tool calls — final response
+          setMessages((prev) => [
+            ...prev,
+            { id: `${Date.now()}-assistant`, role: "assistant", content: response },
+          ]);
+          break;
+        }
+
+        // Execute tool calls and collect results
+        const toolResults: string[] = [];
+        for (const call of toolCalls) {
+          try {
+            call.result = await executeToolCall(call.name, call.args, openFiles);
+            toolResults.push(`[Tool: ${call.name}]\n${call.result}`);
+          } catch (e) {
+            call.result = `Error: ${(e as Error).message}`;
+            toolResults.push(`[Tool: ${call.name}]\nError: ${(e as Error).message}`);
           }
-          setMessages((prev) => [...prev]);
+        }
+
+        // Show the assistant's text + tool calls in the UI
+        const displayContent = stripToolCallXml(response);
+        if (displayContent) {
+          setMessages((prev) => [
+            ...prev,
+            { id: `${Date.now()}-assistant-${iteration}`, role: "assistant", content: displayContent, toolCalls },
+          ]);
+        } else {
+          // Even if no display text, track the tool calls
+          setMessages((prev) => [
+            ...prev,
+            { id: `${Date.now()}-tools-${iteration}`, role: "assistant", content: `(executing ${toolCalls.map(c => c.name).join(", ")}...)`, toolCalls },
+          ]);
+        }
+
+        // Feed results back to LLM for next iteration
+        currentMessages = [
+          ...currentMessages,
+          { role: "assistant", content: response },
+          { role: "user", content: toolResults.join("\n\n") },
+        ];
+
+        // If last iteration, the agent ran out of turns
+        if (iteration === MAX_ITERATIONS - 1) {
+          setMessages((prev) => [
+            ...prev,
+            { id: `${Date.now()}-limit`, role: "system", content: "Reached maximum tool iterations." },
+          ]);
         }
       }
     } catch (error) {
@@ -418,57 +449,7 @@ function TunerBubble({ message }: { message: TunerMessage }) {
   );
 }
 
-function parseToolCalls(response: string): ToolCall[] {
-  const calls: ToolCall[] = [];
-
-  // Try complete tool calls first
-  const invokeRegex = /<invoke\s+name="([^"]+)">([\s\S]*?)<\/invoke>/g;
-  let match;
-  while ((match = invokeRegex.exec(response)) !== null) {
-    const name = match[1];
-    const body = match[2];
-    const args: Record<string, string> = {};
-    const paramRegex = /<parameter\s+name="([^"]+)">([\s\S]*?)<\/parameter>/g;
-    let paramMatch;
-    while ((paramMatch = paramRegex.exec(body)) !== null) {
-      args[paramMatch[1]] = paramMatch[2];
-    }
-    calls.push({ name, args });
-  }
-
-  // If no complete calls found, try to recover truncated tool calls
-  // (LLM ran out of tokens mid-call). Look for <invoke name="write_file">
-  // with at least a path and content parameter, even if the closing tags are missing.
-  if (calls.length === 0 && response.includes("<invoke")) {
-    const truncatedInvoke = /<invoke\s+name="([^"]+)">([\s\S]*)$/;
-    const truncMatch = response.match(truncatedInvoke);
-    if (truncMatch) {
-      const name = truncMatch[1];
-      const body = truncMatch[2];
-      const args: Record<string, string> = {};
-
-      // Try complete parameters first
-      const paramRegex = /<parameter\s+name="([^"]+)">([\s\S]*?)<\/parameter>/g;
-      let paramMatch;
-      while ((paramMatch = paramRegex.exec(body)) !== null) {
-        args[paramMatch[1]] = paramMatch[2];
-      }
-
-      // Try to recover the last truncated parameter (no closing tag)
-      const truncParam = /<parameter\s+name="([^"]+)">([\s\S]+)$/;
-      const truncParamMatch = body.replace(/<parameter\s+name="[^"]+">[^]*?<\/parameter>/g, "").match(truncParam);
-      if (truncParamMatch && !args[truncParamMatch[1]]) {
-        args[truncParamMatch[1]] = truncParamMatch[2];
-      }
-
-      if (Object.keys(args).length > 0) {
-        calls.push({ name, args });
-      }
-    }
-  }
-
-  return calls;
-}
+// parseToolCalls imported from @/lib/llm/tool-parser
 
 /**
  * Resolve a file path for writing. Handles:

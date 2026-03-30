@@ -69,36 +69,10 @@ Rounds 1–${roundCount} are available. Use the get_round_details tool to inspec
 ${TOOL_DEFINITIONS}`;
 }
 
-// ── Parse tool calls from response ──────────────────────────────────
+// ── Re-export shared tool parser ────────────────────────────────────
 
-export interface ToolCall {
-  name: string;
-  args: Record<string, string>;
-}
-
-export function parseToolCalls(response: string): ToolCall[] {
-  const calls: ToolCall[] = [];
-  const invokeRegex = /<invoke\s+name="([^"]+)">([\s\S]*?)<\/invoke>/g;
-  let match;
-  while ((match = invokeRegex.exec(response)) !== null) {
-    const name = match[1];
-    const body = match[2];
-    const args: Record<string, string> = {};
-    const paramRegex = /<parameter\s+name="([^"]+)">([\s\S]*?)<\/parameter>/g;
-    let paramMatch;
-    while ((paramMatch = paramRegex.exec(body)) !== null) {
-      args[paramMatch[1]] = paramMatch[2].trim();
-    }
-    calls.push({ name, args });
-  }
-  return calls;
-}
-
-export function stripToolCallXml(response: string): string {
-  return response
-    .replace(/<invoke\s+name="[^"]*">[\s\S]*?<\/invoke>/g, "")
-    .trim();
-}
+import { parseToolCalls, stripToolCallXml, type ToolCall } from "@/lib/llm/tool-parser";
+export { parseToolCalls, stripToolCallXml, type ToolCall };
 
 // ── Execute a tool call ─────────────────────────────────────────────
 
