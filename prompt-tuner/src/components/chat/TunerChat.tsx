@@ -241,7 +241,7 @@ export function TunerChat() {
         )}
 
         <ScrollArea ref={scrollAreaRef} className="flex-1 overflow-hidden">
-          <div className="p-3 space-y-3">
+          <div className="p-3 space-y-3 min-w-0 overflow-hidden">
             {messages.length === 0 && !streamingText && (
               <div className="text-center text-xs text-muted-foreground py-8 space-y-2">
                 <Bot className="h-8 w-8 mx-auto opacity-20" />
@@ -420,18 +420,18 @@ function TunerBubble({ message }: { message: TunerMessage }) {
   }
 
   return (
-    <div className={`flex gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
+    <div className={`flex gap-2 min-w-0 ${isUser ? "justify-end" : "justify-start"}`}>
       {!isUser && (
         <div className="shrink-0 h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center">
           <Bot className="h-3.5 w-3.5 text-primary" />
         </div>
       )}
       <div
-        className={`max-w-[85%] rounded-lg px-3 py-2 text-xs ${
+        className={`max-w-[85%] min-w-0 rounded-lg px-3 py-2 text-xs overflow-hidden ${
           isUser ? "bg-primary text-primary-foreground" : "bg-muted"
         }`}
       >
-        <div className="whitespace-pre-wrap">{message.content}</div>
+        <div className="whitespace-pre-wrap break-words overflow-hidden">{message.content}</div>
         {message.toolCalls && message.toolCalls.length > 0 && (
           <div className="mt-2 space-y-1 border-t border-border/50 pt-2">
             {message.toolCalls.map((call, i) => (
