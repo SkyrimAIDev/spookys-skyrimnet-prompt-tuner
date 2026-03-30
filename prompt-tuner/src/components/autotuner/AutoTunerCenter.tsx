@@ -492,16 +492,26 @@ function TunerRoundCard({
   }, [forceCollapse]);
 
   // Auto-expand the active section and collapse others when the phase advances.
-  // When activeSection becomes null (run ended), skip — keeps the last active section open.
   useEffect(() => {
-    if (activeSection === null) return;
+    if (activeSection === null) {
+      // Round is no longer current — collapse everything so it doesn't clutter
+      // when the next round appears below.
+      if (!isCurrentRound && round.phase === "complete") {
+        setResponseOpen(false);
+        setExplanationOpen(false);
+        setAssessOpen(false);
+        setProposalOpen(false);
+        setTurnsOpen({});
+      }
+      return;
+    }
     setResponseOpen(activeSection === "response");
     setExplanationOpen(activeSection === "explanation");
     setAssessOpen(activeSection === "assessment");
     setProposalOpen(activeSection === "proposal");
     // Collapse multi-turn sections when moving past benchmarking
     setTurnsOpen(activeSection === "response" ? {} : { 0: false });
-  }, [activeSection]);
+  }, [activeSection, isCurrentRound, round.phase]);
 
   const benchResult = round.benchmarkResult;
   const turnResults = round.turnResults;
