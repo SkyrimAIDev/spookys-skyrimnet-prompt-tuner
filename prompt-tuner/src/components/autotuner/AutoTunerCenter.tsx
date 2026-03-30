@@ -412,6 +412,33 @@ export function AutoTunerCenter() {
         {isRunning && statusMessage && (
           <span className="text-xs text-muted-foreground ml-auto truncate">{statusMessage}</span>
         )}
+        {phase === "complete" && !isRunning && (sessionSummary || postTuningMessages.length > 0) && (
+          <div className="flex items-center gap-1 ml-auto">
+            {rounds.length > 0 && (
+              <Button variant="ghost" size="sm" className="h-5 text-[10px] px-2" onClick={() => {
+                const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
+                if (viewport) viewport.scrollTop = 0;
+              }}>
+                Rounds
+              </Button>
+            )}
+            {sessionSummary && (
+              <Button variant="ghost" size="sm" className="h-5 text-[10px] px-2" onClick={() => {
+                summaryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}>
+                Summary
+              </Button>
+            )}
+            {postTuningMessages.length > 0 && (
+              <Button variant="ghost" size="sm" className="h-5 text-[10px] px-2" onClick={() => {
+                const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
+                if (viewport) viewport.scrollTop = viewport.scrollHeight;
+              }}>
+                Chat
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Rounds + Summary in scrollable area */}
