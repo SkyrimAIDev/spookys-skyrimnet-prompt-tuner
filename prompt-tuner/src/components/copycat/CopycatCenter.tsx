@@ -9,9 +9,15 @@ import { useCopycatStore } from "@/stores/copycatStore";
 import { ProposalDisplay } from "@/components/shared/ProposalDisplay";
 import { SessionSummaryPanel } from "@/components/shared/SessionSummaryPanel";
 import { sendLlmRequest } from "@/lib/llm/client";
-import { applySettingsChanges, applyPromptChanges } from "@/lib/autotuner/apply-changes";
-import { parseProposal } from "@/lib/autotuner/parse-proposal";
+import {
+  buildPostTuningSystemPrompt,
+  parseToolCalls,
+  stripToolCallXml,
+  executeToolCall,
+  buildAgentMessages,
+} from "@/lib/autotuner/post-tuning-agent";
 import type { CopycatPhase, CopycatRound, CopycatDialogueTurn } from "@/types/copycat";
+import type { AiTuningSettings } from "@/types/config";
 import {
   CheckCircle2,
   Circle,
@@ -116,57 +122,7 @@ function CopycatCopyButton({ text }: { text: string }) {
   );
 }
 
-/**
- * Try to extract and apply a changes JSON block from the copycat chat response.
- */
-async function tryCopycatApplyChatChanges(response: string): Promise<string | null> {
-  let json: { settings_changes?: unknown[]; prompt_changes?: unknown[] } | null = null;
-  try {
-    const jsonMatch = response.match(/\{[\s\S]*?"(?:settings_changes|prompt_changes)"[\s\S]*?\}/);
-    if (jsonMatch) json = JSON.parse(jsonMatch[0]);
-  } catch {
-    try {
-      const proposal = parseProposal(response);
-      if (proposal.settingsChanges.length > 0 || proposal.promptChanges.length > 0) {
-        json = {
-          settings_changes: proposal.settingsChanges.map((c) => ({ parameter: c.parameter, old_value: c.oldValue, new_value: c.newValue, reason: c.reason })),
-          prompt_changes: proposal.promptChanges.map((c) => ({ file_path: c.filePath, search_text: c.searchText, replace_text: c.replaceText, reason: c.reason })),
-        };
-      }
-    } catch { /* not a proposal */ }
-  }
-  if (!json) return null;
-
-  const applied: string[] = [];
-  const store = useCopycatStore.getState();
-
-  if (json.settings_changes && Array.isArray(json.settings_changes) && json.settings_changes.length > 0 && store.workingSettings) {
-    try {
-      const parsed = parseProposal(JSON.stringify({ settings_changes: json.settings_changes, prompt_changes: [], reasoning: "chat", stop_tuning: false }));
-      if (parsed.settingsChanges.length > 0) {
-        const newSettings = applySettingsChanges(store.workingSettings, parsed.settingsChanges);
-        store.setWorkingSettings(newSettings);
-        applied.push(`${parsed.settingsChanges.length} setting${parsed.settingsChanges.length !== 1 ? "s" : ""} updated`);
-      }
-    } catch { /* skip */ }
-  }
-
-  if (json.prompt_changes && Array.isArray(json.prompt_changes) && json.prompt_changes.length > 0) {
-    try {
-      const parsed = parseProposal(JSON.stringify({ settings_changes: [], prompt_changes: json.prompt_changes, reasoning: "chat", stop_tuning: false }));
-      if (parsed.promptChanges.length > 0) {
-        const sourceSetName = store.selectedPromptSet || undefined;
-        const appliedPrompts = await applyPromptChanges(parsed.promptChanges, sourceSetName);
-        const successCount = appliedPrompts.filter((c) => !c.reason?.startsWith("[SKIPPED]")).length;
-        if (successCount > 0) applied.push(`${successCount} prompt edit${successCount !== 1 ? "s" : ""} applied`);
-        const skipped = appliedPrompts.filter((c) => c.reason?.startsWith("[SKIPPED]"));
-        if (skipped.length > 0) applied.push(`${skipped.length} skipped`);
-      }
-    } catch { /* skip */ }
-  }
-
-  return applied.length > 0 ? applied.join(", ") : null;
-}
+const MAX_COPYCAT_TOOL_ITERATIONS = 5;
 
 function CopycatPostTuningChatInput() {
   const [input, setInput] = useState("");
@@ -183,118 +139,76 @@ function CopycatPostTuningChatInput() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const state = useCopycatStore.getState();
-    state.addPostTuningMessage({ role: "user", content: text });
-    state.setIsPostTuningStreaming(true);
-    state.clearPostTuningStream();
+    const store = useCopycatStore.getState();
+    store.addPostTuningMessage({ role: "user", content: text });
+    store.setIsPostTuningStreaming(true);
+    store.clearPostTuningStream();
 
-    const rounds = state.rounds;
-    const summary = state.sessionSummary;
-    const allPrior = state.postTuningMessages;
-    const currentSettings = state.workingSettings;
+    const systemPrompt = buildPostTuningSystemPrompt(
+      store.sessionSummary,
+      store.rounds.length,
+    );
 
-    const settingsInfo = currentSettings
-      ? Object.entries(currentSettings).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join("\n")
-      : "No settings available.";
-
-    // Collect current prompt file contents from round data
-    const promptFiles = new Map<string, string>();
-    for (const r of rounds) {
-      for (const pc of r.proposal?.promptChanges || []) {
-        if (pc.modifiedContent) {
-          promptFiles.set(pc.filePath, pc.modifiedContent);
-        } else if (pc.originalContent) {
-          promptFiles.set(pc.filePath, pc.originalContent);
-        }
-      }
-    }
-    const promptFileSection = promptFiles.size > 0
-      ? `## Current Prompt Files\n\n${[...promptFiles.entries()].map(
-          ([path, content]) => `### \`${path.split("/").slice(-2).join("/")}\`\n\`\`\`\n${content.substring(0, 3000)}${content.length > 3000 ? "\n... (truncated)" : ""}\n\`\`\``
-        ).join("\n\n")}`
-      : "";
-
-    const systemMsg = `You are the SkyrimNet copycat tuner agent that just completed a style-matching session. You can answer questions AND make changes.
-
-## Your Capabilities
-- **Answer questions** about the session, explain reasoning, discuss trade-offs
-- **Modify settings** by including a JSON block with \`settings_changes\`
-- **Edit prompts** by including a JSON block with \`prompt_changes\` — use search_text COPIED EXACTLY from the file content below
-
-When the user asks you to make changes, include a JSON block in your response:
-\`\`\`json
-{
-  "settings_changes": [
-    { "parameter": "temperature", "old_value": 1.8, "new_value": 1.6, "reason": "reduce randomness" }
-  ],
-  "prompt_changes": [
-    { "file_path": "/full/path/to/file.prompt", "search_text": "exact text from file", "replace_text": "replacement", "reason": "why" }
-  ]
-}
-\`\`\`
-
-Changes are applied immediately to the working session. The user can review and save them from the right panel.
-If you're just answering a question (no changes needed), respond normally without JSON.
-
-## Current Settings
-${settingsInfo}
-
-${promptFileSection}
-
-## Session Summary
-${summary || "No summary available."}
-
-## Round History
-${rounds.map((r) => {
-      const sc = r.proposal?.settingsChanges || [];
-      const pc = (r.proposal?.promptChanges || []).filter((c: { reason?: string }) => !c.reason?.startsWith("[SKIPPED]"));
-      const skipped = (r.proposal?.promptChanges || []).filter((c: { reason?: string }) => c.reason?.startsWith("[SKIPPED]"));
-      const settingsDetail = sc.length > 0
-        ? `  Settings: ${sc.map((c: { parameter: string; oldValue: unknown; newValue: unknown }) => `${c.parameter}: ${JSON.stringify(c.oldValue)} → ${JSON.stringify(c.newValue)}`).join(", ")}`
-        : "";
-      const promptDetail = pc.length > 0
-        ? `  Prompts: ${pc.map((c: { filePath: string; reason: string }) => `${c.filePath.split("/").pop()}: ${c.reason}`).join("; ")}`
-        : "";
-      const skippedDetail = skipped.length > 0
-        ? `  Skipped: ${skipped.map((c: { filePath: string }) => c.filePath.split("/").pop()).join(", ")}`
-        : "";
-      const score = r.effectivenessScore !== null ? ` (${r.effectivenessScore}% match)` : "";
-      const comparison = r.comparisonText
-        ? `  Comparison: ${r.comparisonText.substring(0, 400)}${r.comparisonText.length > 400 ? "..." : ""}`
-        : "";
-      return `### Round ${r.roundNumber}${score}
-  Reasoning: ${r.proposal?.reasoning || "N/A"}${r.proposal?.stopTuning ? `\n  STOPPED: ${r.proposal.stopReason || "performing well"}` : ""}
-${settingsDetail}
-${promptDetail}
-${skippedDetail}
-${comparison}`.trim();
-    }).join("\n\n")}`;
-
-    const messages = [
-      { role: "system" as const, content: systemMsg },
-      ...allPrior.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-      { role: "user" as const, content: text },
-    ];
+    let currentMessages = buildAgentMessages(systemPrompt, store.postTuningMessages, text);
+    const appliedActions: string[] = [];
 
     try {
-      const log = await sendLlmRequest({
-        messages,
-        agent: "tuner",
-        onChunk: (chunk) => { useCopycatStore.getState().appendPostTuningStream(chunk); },
-        signal: controller.signal,
-      });
-      if (!log.error) {
-        useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: log.response });
-        const applyResult = await tryCopycatApplyChatChanges(log.response);
-        if (applyResult) {
-          useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: `Changes applied: ${applyResult}` });
+      for (let iteration = 0; iteration < MAX_COPYCAT_TOOL_ITERATIONS; iteration++) {
+        const log = await sendLlmRequest({
+          messages: currentMessages,
+          agent: "tuner",
+          onChunk: (chunk) => { useCopycatStore.getState().appendPostTuningStream(chunk); },
+          signal: controller.signal,
+        });
+        if (log.error) break;
+
+        const toolCalls = parseToolCalls(log.response);
+        if (toolCalls.length === 0) {
+          useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: log.response });
+          break;
         }
+
+        const toolResults: string[] = [];
+        const ctx = {
+          rounds: useCopycatStore.getState().rounds,
+          workingSettings: useCopycatStore.getState().workingSettings,
+          setWorkingSettings: (s: AiTuningSettings) => useCopycatStore.getState().setWorkingSettings(s),
+          sourceSetName: useCopycatStore.getState().selectedPromptSet || undefined,
+          getCopycatRoundExtra: (idx: number) => {
+            const r = useCopycatStore.getState().rounds[idx];
+            if (!r) return "";
+            let extra = "";
+            if (r.effectivenessScore !== null) extra += `\n**Effectiveness:** ${r.effectivenessScore}%`;
+            if (r.comparisonText) extra += `\n**Comparison:** ${r.comparisonText.substring(0, 500)}${r.comparisonText.length > 500 ? "..." : ""}`;
+            return extra;
+          },
+        };
+
+        for (const call of toolCalls) {
+          const { result, applied } = await executeToolCall(call, ctx);
+          toolResults.push(`[Tool: ${call.name}]\n${result}`);
+          if (applied) appliedActions.push(applied);
+        }
+
+        useCopycatStore.getState().clearPostTuningStream();
+        currentMessages = [
+          ...currentMessages,
+          { role: "assistant" as const, content: log.response },
+          { role: "user" as const, content: toolResults.join("\n\n") },
+        ];
+
+        if (iteration === MAX_COPYCAT_TOOL_ITERATIONS - 1) {
+          const displayText = stripToolCallXml(log.response);
+          if (displayText) useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: displayText });
+        }
+      }
+
+      if (appliedActions.length > 0) {
+        useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: `Changes applied: ${appliedActions.join(", ")}` });
       }
     } catch {
       const partial = useCopycatStore.getState().postTuningStream;
-      if (partial) {
-        useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: partial });
-      }
+      if (partial) useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: partial });
     } finally {
       useCopycatStore.getState().setIsPostTuningStreaming(false);
       useCopycatStore.getState().clearPostTuningStream();
@@ -303,9 +217,7 @@ ${comparison}`.trim();
   }, [input, isStreaming]);
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isStreaming) handleStop();
-    };
+    const handleKeyDown = (e: KeyboardEvent) => { if (e.key === "Escape" && isStreaming) handleStop(); };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isStreaming, handleStop]);
