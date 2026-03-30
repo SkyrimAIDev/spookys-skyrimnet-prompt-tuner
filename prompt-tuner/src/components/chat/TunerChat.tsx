@@ -53,7 +53,7 @@ export function TunerChat() {
   const [streamingText, setStreamingText] = useState("");
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const [chatWidth, setChatWidth] = useState(340);
+  const [chatWidth, setChatWidth] = useState(480);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   const handleDragStart = useCallback((e: React.MouseEvent) => {
@@ -61,7 +61,7 @@ export function TunerChat() {
     const onMove = (ev: MouseEvent) => {
       if (!dragRef.current) return;
       const delta = dragRef.current.startX - ev.clientX;
-      setChatWidth(Math.max(260, Math.min(600, dragRef.current.startWidth + delta)));
+      setChatWidth(Math.max(300, Math.min(800, dragRef.current.startWidth + delta)));
     };
     const onUp = () => {
       dragRef.current = null;
