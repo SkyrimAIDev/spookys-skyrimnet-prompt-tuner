@@ -244,8 +244,31 @@ ${promptFileSection}
 ## Session Summary
 ${summary || "No summary available."}
 
-## Session Details
-${rounds.map((r) => `Round ${r.roundNumber} (${r.effectivenessScore ?? "?"}%): ${r.proposal?.reasoning || "N/A"}`).join("\n")}`;
+## Round History
+${rounds.map((r) => {
+      const sc = r.proposal?.settingsChanges || [];
+      const pc = (r.proposal?.promptChanges || []).filter((c: { reason?: string }) => !c.reason?.startsWith("[SKIPPED]"));
+      const skipped = (r.proposal?.promptChanges || []).filter((c: { reason?: string }) => c.reason?.startsWith("[SKIPPED]"));
+      const settingsDetail = sc.length > 0
+        ? `  Settings: ${sc.map((c: { parameter: string; oldValue: unknown; newValue: unknown }) => `${c.parameter}: ${JSON.stringify(c.oldValue)} → ${JSON.stringify(c.newValue)}`).join(", ")}`
+        : "";
+      const promptDetail = pc.length > 0
+        ? `  Prompts: ${pc.map((c: { filePath: string; reason: string }) => `${c.filePath.split("/").pop()}: ${c.reason}`).join("; ")}`
+        : "";
+      const skippedDetail = skipped.length > 0
+        ? `  Skipped: ${skipped.map((c: { filePath: string }) => c.filePath.split("/").pop()).join(", ")}`
+        : "";
+      const score = r.effectivenessScore !== null ? ` (${r.effectivenessScore}% match)` : "";
+      const comparison = r.comparisonText
+        ? `  Comparison: ${r.comparisonText.substring(0, 400)}${r.comparisonText.length > 400 ? "..." : ""}`
+        : "";
+      return `### Round ${r.roundNumber}${score}
+  Reasoning: ${r.proposal?.reasoning || "N/A"}${r.proposal?.stopTuning ? `\n  STOPPED: ${r.proposal.stopReason || "performing well"}` : ""}
+${settingsDetail}
+${promptDetail}
+${skippedDetail}
+${comparison}`.trim();
+    }).join("\n\n")}`;
 
     const messages = [
       { role: "system" as const, content: systemMsg },
