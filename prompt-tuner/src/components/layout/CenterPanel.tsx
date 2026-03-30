@@ -49,22 +49,24 @@ export function CenterPanel() {
             </TabsTrigger>
           </TabsList>
         </div>
-        <TabsContent value="editor" className="flex-1 overflow-hidden mt-0">
+        {/* forceMount keeps all tabs in the DOM so state survives tab switches.
+            Inactive tabs are hidden via data-[state=inactive]:hidden. */}
+        <TabsContent value="editor" forceMount className="flex-1 overflow-hidden mt-0 data-[state=inactive]:hidden">
           <EditorPanel />
         </TabsContent>
-        <TabsContent value="tuner" className="flex-1 overflow-hidden mt-0">
+        <TabsContent value="tuner" forceMount className="flex-1 overflow-hidden mt-0 data-[state=inactive]:hidden">
           <TunerChat />
         </TabsContent>
-        <TabsContent value="preview" className="flex-1 overflow-hidden mt-0">
+        <TabsContent value="preview" forceMount className="flex-1 overflow-hidden mt-0 data-[state=inactive]:hidden">
           <PreviewChat />
         </TabsContent>
-        <TabsContent value="benchmark" className="flex-1 overflow-hidden mt-0">
+        <TabsContent value="benchmark" forceMount className="flex-1 overflow-hidden mt-0 data-[state=inactive]:hidden">
           <BenchmarkCenter />
         </TabsContent>
-        <TabsContent value="autotuner" className="flex-1 overflow-hidden mt-0">
+        <TabsContent value="autotuner" forceMount className="flex-1 overflow-hidden mt-0 data-[state=inactive]:hidden">
           <AutoTunerCenter />
         </TabsContent>
-        <TabsContent value="copycat" className="flex-1 overflow-hidden mt-0">
+        <TabsContent value="copycat" forceMount className="flex-1 overflow-hidden mt-0 data-[state=inactive]:hidden">
           <CopycatCenter />
         </TabsContent>
       </Tabs>

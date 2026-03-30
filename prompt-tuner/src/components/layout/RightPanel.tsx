@@ -63,16 +63,21 @@ export function RightPanel() {
   const [diaryOpen, setDiaryOpen] = useState(false);
   const [bioUpdateOpen, setBioUpdateOpen] = useState(false);
 
-  if (activeTab === "benchmark") {
-    return <BenchmarkAssessmentPanel />;
-  }
-
-  if (activeTab === "autotuner") {
-    return <AutoTunerReport />;
-  }
-
-  if (activeTab === "copycat") {
-    return <CopycatReport />;
+  // Benchmark/tuner/copycat panels stay mounted so state persists across tab switches
+  if (activeTab === "benchmark" || activeTab === "autotuner" || activeTab === "copycat") {
+    return (
+      <>
+        <div className={activeTab === "benchmark" ? "flex h-full flex-col" : "hidden"}>
+          <BenchmarkAssessmentPanel />
+        </div>
+        <div className={activeTab === "autotuner" ? "flex h-full flex-col" : "hidden"}>
+          <AutoTunerReport />
+        </div>
+        <div className={activeTab === "copycat" ? "flex h-full flex-col" : "hidden"}>
+          <CopycatReport />
+        </div>
+      </>
+    );
   }
 
   const agentTestDisabled = selectedNpcs.length === 0 || chatHistory.length === 0;

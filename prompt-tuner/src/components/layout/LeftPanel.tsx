@@ -50,16 +50,21 @@ export function LeftPanel() {
   const toggle = (key: string) =>
     setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  if (activeTab === "benchmark") {
-    return <BenchmarkSetup />;
-  }
-
-  if (activeTab === "autotuner") {
-    return <AutoTunerSetup />;
-  }
-
-  if (activeTab === "copycat") {
-    return <CopycatSetup />;
+  // Benchmark/tuner/copycat setup panels stay mounted so state persists across tab switches
+  if (activeTab === "benchmark" || activeTab === "autotuner" || activeTab === "copycat") {
+    return (
+      <>
+        <div className={activeTab === "benchmark" ? "flex h-full flex-col" : "hidden"}>
+          <BenchmarkSetup />
+        </div>
+        <div className={activeTab === "autotuner" ? "flex h-full flex-col" : "hidden"}>
+          <AutoTunerSetup />
+        </div>
+        <div className={activeTab === "copycat" ? "flex h-full flex-col" : "hidden"}>
+          <CopycatSetup />
+        </div>
+      </>
+    );
   }
 
   if (activeTab === "preview") {
