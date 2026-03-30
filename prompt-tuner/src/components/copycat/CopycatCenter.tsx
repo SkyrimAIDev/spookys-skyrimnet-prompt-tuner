@@ -344,7 +344,8 @@ export function CopycatCenter() {
 
   useEffect(() => {
     if (isRunning && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      const viewport = scrollRef.current.closest("[data-radix-scroll-area-viewport]");
+      if (viewport) viewport.scrollTop = viewport.scrollHeight;
     }
   }, [comparisonStream, proposalStream, isRunning, rounds, statusMessage]);
 
@@ -358,7 +359,10 @@ export function CopycatCenter() {
   // Auto-scroll to bottom on new chat messages or streaming
   useEffect(() => {
     if ((postTuningMessages.length > 0 || postTuningStream) && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      requestAnimationFrame(() => {
+        const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
+        if (viewport) viewport.scrollTop = viewport.scrollHeight;
+      });
     }
   }, [postTuningMessages, postTuningStream]);
 
