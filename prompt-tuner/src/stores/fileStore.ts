@@ -28,6 +28,7 @@ interface FileState {
   toggleExpanded: (path: string) => void;
   setSelectedPath: (path: string | null) => void;
   openFile: (file: OpenFile) => void;
+  pinTab: (path: string) => void;
   closeFile: (path: string) => void;
   setActiveFile: (path: string) => void;
   updateFileContent: (path: string, content: string) => void;
@@ -74,13 +75,45 @@ export const useFileStore = create<FileState>((set, get) => ({
     set((state) => {
       const existing = state.openFiles.find((f) => f.path === file.path);
       if (existing) {
+        // If re-opening a preview file, promote it to permanent
+        if (existing.isPreview) {
+          return {
+            openFiles: state.openFiles.map((f) =>
+              f.path === file.path ? { ...f, isPreview: false } : f
+            ),
+            activeFilePath: file.path,
+          };
+        }
         return { activeFilePath: file.path };
       }
+
+      // If this is a preview tab, replace the existing preview tab (if any)
+      if (file.isPreview) {
+        const existingPreview = state.openFiles.find((f) => f.isPreview && !f.isDirty);
+        if (existingPreview) {
+          // Replace the preview tab — unless it became dirty (promoted automatically)
+          return {
+            openFiles: state.openFiles.map((f) =>
+              f.path === existingPreview.path ? file : f
+            ),
+            activeFilePath: file.path,
+          };
+        }
+      }
+
       return {
         openFiles: [...state.openFiles, file],
         activeFilePath: file.path,
       };
     }),
+
+  /** Promote a preview tab to a permanent tab */
+  pinTab: (path: string) =>
+    set((state) => ({
+      openFiles: state.openFiles.map((f) =>
+        f.path === path ? { ...f, isPreview: false } : f
+      ),
+    })),
 
   closeFile: (path) =>
     set((state) => {
@@ -107,7 +140,9 @@ export const useFileStore = create<FileState>((set, get) => ({
         // a file dirty when the user hasn't actually changed anything.
         const normalize = (s: string) => s.replace(/\r\n/g, "\n");
         const isDirty = normalize(content) !== normalize(f.originalContent);
-        return { ...f, content, isDirty };
+        // Auto-promote preview tabs to permanent when edited
+        const isPreview = isDirty ? false : f.isPreview;
+        return { ...f, content, isDirty, isPreview };
       }),
     })),
 

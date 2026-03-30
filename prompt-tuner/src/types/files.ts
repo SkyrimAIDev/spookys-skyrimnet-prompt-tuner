@@ -18,6 +18,8 @@ export interface OpenFile {
   originalContent: string;
   isDirty: boolean;
   isReadOnly: boolean;
+  /** Preview tabs are transient — replaced when clicking another file */
+  isPreview?: boolean;
 }
 
 export interface PromptSet {

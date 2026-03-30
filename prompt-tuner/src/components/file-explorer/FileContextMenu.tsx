@@ -73,6 +73,36 @@ export function FileContextMenu({ node, position, onClose }: FileContextMenuProp
     onClose();
   };
 
+  const openInNewTab = () => {
+    const store = useFileStore.getState();
+    // If already open, just pin it and activate
+    const existing = store.openFiles.find((f) => f.path === node.path);
+    if (existing) {
+      if (existing.isPreview) store.pinTab(node.path);
+      store.setActiveFile(node.path);
+      onClose();
+      return;
+    }
+    store.setLoadingFile(true);
+    fetch(`/api/files/read?path=${encodeURIComponent(node.path)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        store.openFile({
+          path: node.path,
+          name: node.name,
+          displayName: node.displayName || node.name,
+          content: data.content,
+          originalContent: data.content,
+          isDirty: false,
+          isReadOnly: data.isReadOnly,
+          isPreview: false,
+        });
+      })
+      .catch(() => toast.error("Failed to open file"))
+      .finally(() => store.setLoadingFile(false));
+    onClose();
+  };
+
   const openExternal = async () => {
     onClose();
     const res = await fetch("/api/files/open-external", {
@@ -146,7 +176,10 @@ export function FileContextMenu({ node, position, onClose }: FileContextMenuProp
       className="w-52 rounded-md border bg-popover shadow-lg py-1 text-xs overflow-visible"
     >
       {isFile && (
-        <MenuItem onClick={openFile}>Open</MenuItem>
+        <>
+          <MenuItem onClick={openFile}>Open</MenuItem>
+          <MenuItem onClick={openInNewTab}>Open in New Tab</MenuItem>
+        </>
       )}
       <MenuItem onClick={openExternal}>Open in External Editor</MenuItem>
       <MenuItem onClick={revealInExplorer}>Reveal in Explorer</MenuItem>

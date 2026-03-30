@@ -68,13 +68,35 @@ export function FileTreeNode({ node, depth }: FileTreeNodeProps) {
       }
     } else {
       setSelectedPath(node.path);
-      handleOpenFile(node);
+      handleOpenFile(node, true); // single-click = preview
     }
   }, [node, isExpanded, lazyChildren.length, toggleExpanded, setSelectedPath]);
 
-  const handleOpenFile = useCallback(async (fileNode: FileNode) => {
+  // Double-click promotes to permanent tab
+  const handleDoubleClick = useCallback(() => {
+    if (node.type === "file") {
+      const store = useFileStore.getState();
+      const existing = store.openFiles.find((f) => f.path === node.path);
+      if (existing?.isPreview) {
+        store.pinTab(node.path);
+      } else if (!existing) {
+        handleOpenFile(node, false); // double-click = permanent
+      }
+    }
+  }, [node]);
+
+  // Middle-click always opens in new permanent tab
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button === 1 && node.type === "file") {
+      e.preventDefault();
+      handleOpenFile(node, false);
+    }
+  }, [node]);
+
+  const handleOpenFile = useCallback(async (fileNode: FileNode, asPreview = false) => {
     const store = useFileStore.getState();
-    if (store.openFiles.some((f) => f.path === fileNode.path)) {
+    const existing = store.openFiles.find((f) => f.path === fileNode.path);
+    if (existing) {
       store.setActiveFile(fileNode.path);
       return;
     }
@@ -93,6 +115,7 @@ export function FileTreeNode({ node, depth }: FileTreeNodeProps) {
         originalContent: data.content,
         isDirty: false,
         isReadOnly: data.isReadOnly,
+        isPreview: asPreview,
       });
     } catch (error) {
       console.error("Failed to open file:", error);
@@ -237,6 +260,8 @@ export function FileTreeNode({ node, depth }: FileTreeNodeProps) {
       <button
         draggable={node.type === "file" && !node.isReadOnly}
         onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
+        onMouseDown={handleMouseDown}
         onContextMenu={handleContextMenu}
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
