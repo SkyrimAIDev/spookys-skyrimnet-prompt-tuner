@@ -118,6 +118,30 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function PostTuningStreamBubble({ stream }: { stream: string }) {
+  const [showVerbose, setShowVerbose] = useState(false);
+  return (
+    <div className="text-xs rounded-md px-3 py-2 bg-muted/50 border border-muted mr-8">
+      <div className="flex items-center gap-2 text-[9px] text-muted-foreground mb-0.5">
+        <span className="font-medium">Tuner</span>
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <span>Working on it...</span>
+        <button
+          onClick={() => setShowVerbose((v) => !v)}
+          className="ml-auto text-[9px] text-muted-foreground/60 hover:text-muted-foreground underline"
+        >
+          {showVerbose ? "Hide details" : "Show details"}
+        </button>
+      </div>
+      {showVerbose && (
+        <pre className="whitespace-pre-wrap break-words text-[10px] text-muted-foreground/80 max-h-60 overflow-auto mt-1 pt-1 border-t border-border/30">
+          {stream}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 const MAX_TOOL_ITERATIONS = 5;
 
 function PostTuningChatInput() {
@@ -165,13 +189,12 @@ function PostTuningChatInput() {
     const appliedActions: AppliedChange[] = [];
 
     try {
-      // Show a working indicator while the agent processes (no streaming to avoid flashing)
-      useAutoTunerStore.getState().appendPostTuningStream("Working on it...");
-
       for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+        // Stream all iterations to the buffer — UI shows verbose toggle
         const log = await sendLlmRequest({
           messages: currentMessages,
           agent: "tuner",
+          onChunk: (chunk) => { useAutoTunerStore.getState().appendPostTuningStream(chunk); },
           signal: controller.signal,
         });
 
@@ -206,6 +229,9 @@ function PostTuningChatInput() {
           { role: "assistant" as const, content: log.response },
           { role: "user" as const, content: toolResults.join("\n\n") },
         ];
+
+        // Add separator for next iteration's stream
+        useAutoTunerStore.getState().appendPostTuningStream("\n\n---\n\n");
       }
 
       // Report applied actions with structured display
@@ -438,13 +464,7 @@ export function AutoTunerCenter() {
                 </div>
               ))}
               {postTuningStream && (
-                <div className="text-xs rounded-md px-3 py-2 bg-muted/50 border border-muted mr-8">
-                  <div className="text-[9px] text-muted-foreground mb-0.5 font-medium">Tuner</div>
-                  <div className="whitespace-pre-wrap">
-                    {postTuningStream}
-                    <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
-                  </div>
-                </div>
+                <PostTuningStreamBubble stream={postTuningStream} />
               )}
             </div>
           )}

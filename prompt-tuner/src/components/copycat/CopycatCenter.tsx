@@ -124,6 +124,30 @@ function CopycatCopyButton({ text }: { text: string }) {
   );
 }
 
+function CopycatStreamBubble({ stream }: { stream: string }) {
+  const [showVerbose, setShowVerbose] = useState(false);
+  return (
+    <div className="text-xs rounded-md px-3 py-2 bg-muted/50 border border-muted mr-8">
+      <div className="flex items-center gap-2 text-[9px] text-muted-foreground mb-0.5">
+        <span className="font-medium">Tuner</span>
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <span>Working on it...</span>
+        <button
+          onClick={() => setShowVerbose((v) => !v)}
+          className="ml-auto text-[9px] text-muted-foreground/60 hover:text-muted-foreground underline"
+        >
+          {showVerbose ? "Hide details" : "Show details"}
+        </button>
+      </div>
+      {showVerbose && (
+        <pre className="whitespace-pre-wrap break-words text-[10px] text-muted-foreground/80 max-h-60 overflow-auto mt-1 pt-1 border-t border-border/30">
+          {stream}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 const MAX_COPYCAT_TOOL_ITERATIONS = 5;
 
 function CopycatPostTuningChatInput() {
@@ -163,12 +187,11 @@ function CopycatPostTuningChatInput() {
     const appliedActions: AppliedChange[] = [];
 
     try {
-      useCopycatStore.getState().appendPostTuningStream("Working on it...");
-
       for (let iteration = 0; iteration < MAX_COPYCAT_TOOL_ITERATIONS; iteration++) {
         const log = await sendLlmRequest({
           messages: currentMessages,
           agent: "tuner",
+          onChunk: (chunk) => { useCopycatStore.getState().appendPostTuningStream(chunk); },
           signal: controller.signal,
         });
         if (log.error) break;
@@ -207,6 +230,8 @@ function CopycatPostTuningChatInput() {
           { role: "assistant" as const, content: log.response },
           { role: "user" as const, content: toolResults.join("\n\n") },
         ];
+
+        useCopycatStore.getState().appendPostTuningStream("\n\n---\n\n");
       }
 
       if (appliedActions.length > 0) {
@@ -439,13 +464,7 @@ export function CopycatCenter() {
                 </div>
               ))}
               {postTuningStream && (
-                <div className="text-xs rounded-md px-3 py-2 bg-muted/50 border border-muted mr-8">
-                  <div className="text-[9px] text-muted-foreground mb-0.5 font-medium">Tuner</div>
-                  <div className="whitespace-pre-wrap">
-                    {postTuningStream}
-                    <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
-                  </div>
-                </div>
+                <CopycatStreamBubble stream={postTuningStream} />
               )}
             </div>
           )}
