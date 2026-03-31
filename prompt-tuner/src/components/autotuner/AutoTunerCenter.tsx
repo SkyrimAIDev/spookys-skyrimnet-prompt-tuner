@@ -514,38 +514,48 @@ function TunerRoundCard({
   const [assessOpen, setAssessOpen] = useState(activeSection === "assessment");
   const [proposalOpen, setProposalOpen] = useState(activeSection === "proposal");
 
-  // Collapse all sections when summary appears
+  // Track which sections the user has manually toggled — auto-collapse respects these
+  const [userPinned] = useState(() => new Set<string>());
+
+  // Wrap setters to track user interaction
+  const userToggleResponse = useCallback(() => { userPinned.add("response"); setResponseOpen((v) => !v); }, [userPinned]);
+  const userToggleExplanation = useCallback(() => { userPinned.add("explanation"); setExplanationOpen((v) => !v); }, [userPinned]);
+  const userToggleAssessment = useCallback(() => { userPinned.add("assessment"); setAssessOpen((v) => !v); }, [userPinned]);
+  const userToggleProposal = useCallback(() => { userPinned.add("proposal"); setProposalOpen((v) => !v); }, [userPinned]);
+
+  // Collapse all sections when summary appears (overrides user pins)
   useEffect(() => {
     if (forceCollapse) {
+      userPinned.clear();
       setPromptOpen(false);
       setResponseOpen(false);
       setExplanationOpen(false);
       setAssessOpen(false);
       setProposalOpen(false);
     }
-  }, [forceCollapse]);
+  }, [forceCollapse, userPinned]);
 
   // Auto-expand the active section and collapse others when the phase advances.
+  // Sections the user has manually toggled are left alone.
   useEffect(() => {
     if (activeSection === null) {
-      // Round is no longer current — collapse everything so it doesn't clutter
-      // when the next round appears below.
       if (!isCurrentRound && round.phase === "complete") {
-        setResponseOpen(false);
-        setExplanationOpen(false);
-        setAssessOpen(false);
-        setProposalOpen(false);
+        // Round completed — collapse unpinned sections
+        if (!userPinned.has("response")) setResponseOpen(false);
+        if (!userPinned.has("explanation")) setExplanationOpen(false);
+        if (!userPinned.has("assessment")) setAssessOpen(false);
+        if (!userPinned.has("proposal")) setProposalOpen(false);
         setTurnsOpen({});
       }
       return;
     }
-    setResponseOpen(activeSection === "response");
-    setExplanationOpen(activeSection === "explanation");
-    setAssessOpen(activeSection === "assessment");
-    setProposalOpen(activeSection === "proposal");
-    // Collapse multi-turn sections when moving past benchmarking
-    setTurnsOpen(activeSection === "response" ? {} : { 0: false });
-  }, [activeSection, isCurrentRound, round.phase]);
+    // Auto-expand active, collapse others unless user pinned them
+    if (!userPinned.has("response")) setResponseOpen(activeSection === "response");
+    if (!userPinned.has("explanation")) setExplanationOpen(activeSection === "explanation");
+    if (!userPinned.has("assessment")) setAssessOpen(activeSection === "assessment");
+    if (!userPinned.has("proposal")) setProposalOpen(activeSection === "proposal");
+    if (!userPinned.has("turns")) setTurnsOpen(activeSection === "response" ? {} : { 0: false });
+  }, [activeSection, isCurrentRound, round.phase, userPinned]);
 
   const benchResult = round.benchmarkResult;
   const turnResults = round.turnResults;
@@ -671,7 +681,7 @@ function TunerRoundCard({
               <CollapsibleSection
                 title="Model Response"
                 open={responseOpen}
-                onToggle={() => setResponseOpen(!responseOpen)}
+                onToggle={userToggleResponse}
               >
                 <div className="space-y-2">
                   <pre className="whitespace-pre-wrap text-xs bg-muted/50 rounded p-2 max-h-64 overflow-auto">
@@ -694,7 +704,7 @@ function TunerRoundCard({
           <CollapsibleSection
             title="Self-Explanation"
             open={explanationOpen}
-            onToggle={() => setExplanationOpen(!explanationOpen)}
+            onToggle={userToggleExplanation}
             streaming={showExplanationStream && !!explanationStream}
           >
             <pre className="whitespace-pre-wrap text-xs text-amber-300/80 bg-amber-500/5 rounded p-2 max-h-48 overflow-auto">
@@ -708,7 +718,7 @@ function TunerRoundCard({
           <CollapsibleSection
             title="Assessment"
             open={assessOpen}
-            onToggle={() => setAssessOpen(!assessOpen)}
+            onToggle={userToggleAssessment}
             streaming={showAssessmentStream && !!assessmentStream}
           >
             <pre className="whitespace-pre-wrap text-xs max-h-64 overflow-auto">
@@ -722,7 +732,7 @@ function TunerRoundCard({
           <CollapsibleSection
             title="Proposed Changes"
             open={proposalOpen}
-            onToggle={() => setProposalOpen(!proposalOpen)}
+            onToggle={userToggleProposal}
             streaming={showProposalStream && !!proposalStream}
           >
             {round.proposal ? (
