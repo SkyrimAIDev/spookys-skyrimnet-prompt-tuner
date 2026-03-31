@@ -188,7 +188,10 @@ function PostTuningChatInput() {
           if (applied) appliedActions.push(applied);
         }
 
-        // Clear stream for next iteration
+        // Add the display text as a message BEFORE clearing stream, so there's no flash
+        if (displayText) {
+          useAutoTunerStore.getState().addPostTuningMessage({ role: "assistant", content: displayText });
+        }
         useAutoTunerStore.getState().clearPostTuningStream();
 
         // Add assistant response and tool results to message chain for next iteration
@@ -197,13 +200,6 @@ function PostTuningChatInput() {
           { role: "assistant" as const, content: log.response },
           { role: "user" as const, content: toolResults.join("\n\n") },
         ];
-
-        // If this was the last iteration, add what we have
-        if (iteration === MAX_TOOL_ITERATIONS - 1) {
-          if (displayText) {
-            useAutoTunerStore.getState().addPostTuningMessage({ role: "assistant", content: displayText });
-          }
-        }
       }
 
       // Report applied actions

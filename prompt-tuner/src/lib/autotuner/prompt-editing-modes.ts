@@ -1,4 +1,6 @@
 import type { BenchmarkCategory } from "@/types/benchmark";
+import type { PromptEditingMode } from "@/types/autotuner";
+import type { PromptChange } from "@/types/autotuner";
 
 /**
  * Maps each benchmark category → the recommended prompt files for editing.
@@ -280,3 +282,81 @@ export const NEW_PROMPT_LOCATIONS: Record<BenchmarkCategory, { directory: string
     numberingHint: "dynamic_bio_update.prompt is a standalone file. Create supplementary files at the prompts root with a numeric prefix, e.g. 0010_bio_guidelines.prompt.",
   },
 };
+
+/**
+ * Enforce prompt editing mode constraints at the code level.
+ * Filters out any proposed changes that violate the selected mode.
+ * Returns the filtered changes and a list of rejected changes with reasons.
+ */
+export function enforcePromptEditingMode(
+  changes: PromptChange[],
+  mode: PromptEditingMode,
+  category: BenchmarkCategory,
+  customPaths?: string[],
+): { allowed: PromptChange[]; rejected: PromptChange[] } {
+  if (mode === "auto") {
+    // Auto mode — no restrictions
+    return { allowed: changes, rejected: [] };
+  }
+
+  const allowed: PromptChange[] = [];
+  const rejected: PromptChange[] = [];
+
+  // Build the set of allowed file paths/names based on mode
+  let allowedNames: Set<string> | null = null;
+  let allowNewFiles = false;
+
+  if (mode === "recommended") {
+    const rec = RECOMMENDED_PROMPTS[category] || [];
+    // Match by filename (last path segment) since the LLM uses absolute paths
+    allowedNames = new Set(rec.map((p) => p.split("/").pop()!));
+    allowNewFiles = false;
+  } else if (mode === "world_settings") {
+    allowedNames = new Set(["0010_setting.prompt"]);
+    allowNewFiles = false;
+  } else if (mode === "custom") {
+    if (customPaths && customPaths.length > 0) {
+      allowedNames = new Set(customPaths.map((p) => p.split("/").pop()!));
+    }
+    allowNewFiles = false;
+  } else if (mode === "new_prompt") {
+    allowedNames = null; // No existing file editing allowed
+    allowNewFiles = true;
+  }
+
+  for (const change of changes) {
+    const fileName = change.filePath.split("/").pop() || change.filePath;
+    const isNewFile = !change.searchText || change.searchText.trim() === "";
+
+    if (mode === "new_prompt") {
+      if (isNewFile) {
+        allowed.push(change);
+      } else {
+        rejected.push({
+          ...change,
+          reason: `[BLOCKED] New Prompt mode — cannot edit existing files. ${change.reason}`,
+          modifiedContent: "",
+        });
+      }
+    } else {
+      // recommended, world_settings, custom — only allow listed files, no new files
+      if (isNewFile) {
+        rejected.push({
+          ...change,
+          reason: `[BLOCKED] Cannot create new files in ${mode} mode. ${change.reason}`,
+          modifiedContent: "",
+        });
+      } else if (allowedNames && !allowedNames.has(fileName)) {
+        rejected.push({
+          ...change,
+          reason: `[BLOCKED] File not in ${mode} allowed list: ${fileName}. ${change.reason}`,
+          modifiedContent: "",
+        });
+      } else {
+        allowed.push(change);
+      }
+    }
+  }
+
+  return { allowed, rejected };
+}

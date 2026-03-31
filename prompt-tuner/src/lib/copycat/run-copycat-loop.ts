@@ -7,6 +7,7 @@ import { buildMultiTurnRenderBody, getDefaultScenario, resolveScenarioNpcs } fro
 import { buildCopycatMessages } from "./build-copycat-prompt";
 import { parseCopycatResponse } from "./parse-copycat-response";
 import { applySettingsChanges, applyPromptChanges } from "@/lib/autotuner/apply-changes";
+import { enforcePromptEditingMode } from "@/lib/autotuner/prompt-editing-modes";
 import { fetchPromptContent } from "@/lib/autotuner/fetch-prompt-content";
 import { createTunerTempSet, deleteTunerTempSet, TUNER_TEMP_SET } from "@/lib/autotuner/save-results";
 import { sendLlmRequest, sendLlmRequestWithSlot } from "@/lib/llm/client";
@@ -362,7 +363,13 @@ export async function runCopycatLoop(params: CopycatLoopParams) {
 
         // Apply prompt changes (non-fatal — bad search text shouldn't kill the loop)
         if (parsed.proposal.promptChanges.length > 0 && tuningTarget !== "settings") {
-          if (!tempSetCreated) {
+          // Enforce editing mode constraints
+          const mode = promptEditingMode || "auto";
+          const { allowed, rejected } = enforcePromptEditingMode(
+            parsed.proposal.promptChanges, mode, "dialogue", customPromptPaths,
+          );
+
+          if (allowed.length > 0 && !tempSetCreated) {
             await createTunerTempSet();
             workingPromptSet = TUNER_TEMP_SET;
             store.setWorkingPromptSet(workingPromptSet);
@@ -370,12 +377,15 @@ export async function runCopycatLoop(params: CopycatLoopParams) {
           }
 
           try {
-            const appliedPrompts = await applyPromptChanges(parsed.proposal.promptChanges, sourceSetName);
+            const appliedPrompts = allowed.length > 0
+              ? await applyPromptChanges(allowed, sourceSetName)
+              : [];
+            const combinedPrompts = [...appliedPrompts, ...rejected];
             const currentProposal = useCopycatStore.getState().rounds[roundIdx]?.proposal;
             if (currentProposal) {
               store.setRoundProposal(roundIdx, {
                 ...currentProposal,
-                promptChanges: appliedPrompts,
+                promptChanges: combinedPrompts,
               }, copycatLog.response);
             }
           } catch (promptErr: unknown) {

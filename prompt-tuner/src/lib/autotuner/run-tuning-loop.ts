@@ -12,6 +12,7 @@ import { applySettingsChanges, applyPromptChanges } from "./apply-changes";
 import { fetchPromptContent } from "./fetch-prompt-content";
 import { createTunerTempSet, deleteTunerTempSet, TUNER_TEMP_SET } from "./save-results";
 import { buildAutoTunerSummaryMessages } from "./build-summary-prompt";
+import { enforcePromptEditingMode } from "./prompt-editing-modes";
 import { sendLlmRequest, sendLlmRequestWithSlot } from "@/lib/llm/client";
 import { useAutoTunerStore } from "@/stores/autoTunerStore";
 
@@ -538,8 +539,17 @@ export async function runTuningLoop(
 
         // Apply prompt changes (non-fatal — bad search text shouldn't kill the loop)
         if (proposal.promptChanges.length > 0 && tuningTarget !== "settings") {
+          // Enforce editing mode constraints — reject changes to disallowed files
+          const mode = promptEditingMode || "auto";
+          const { allowed, rejected } = enforcePromptEditingMode(
+            proposal.promptChanges, mode, category, customPromptPaths,
+          );
+
+          // Merge rejected changes back with [BLOCKED] markers
+          const allChanges = [...allowed];
+
           // Create temp set if not already created
-          if (!tempSetCreated) {
+          if (allowed.length > 0 && !tempSetCreated) {
             await createTunerTempSet();
             workingPromptSet = TUNER_TEMP_SET;
             store.setWorkingPromptSet(workingPromptSet);
@@ -547,13 +557,17 @@ export async function runTuningLoop(
           }
 
           try {
-            const appliedPrompts = await applyPromptChanges(proposal.promptChanges, sourceSetName);
-            // Update proposal with actual content
+            const appliedPrompts = allowed.length > 0
+              ? await applyPromptChanges(allowed, sourceSetName)
+              : [];
+            // Combine applied + rejected for the round display
+            const combinedPrompts = [...appliedPrompts, ...rejected];
+            // Update proposal with actual content (applied + blocked)
             const currentProposal = useAutoTunerStore.getState().rounds[roundIdx]?.proposal;
             if (currentProposal) {
               store.setRoundProposal(roundIdx, {
                 ...currentProposal,
-                promptChanges: appliedPrompts,
+                promptChanges: combinedPrompts,
               }, proposalLog.response);
             }
           } catch (promptErr: unknown) {

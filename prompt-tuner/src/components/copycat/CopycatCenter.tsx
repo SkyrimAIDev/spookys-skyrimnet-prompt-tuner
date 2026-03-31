@@ -190,17 +190,18 @@ function CopycatPostTuningChatInput() {
           if (applied) appliedActions.push(applied);
         }
 
+        // Add display text as message BEFORE clearing stream to avoid flash
+        const displayText = stripToolCallXml(log.response);
+        if (displayText) {
+          useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: displayText });
+        }
         useCopycatStore.getState().clearPostTuningStream();
+
         currentMessages = [
           ...currentMessages,
           { role: "assistant" as const, content: log.response },
           { role: "user" as const, content: toolResults.join("\n\n") },
         ];
-
-        if (iteration === MAX_COPYCAT_TOOL_ITERATIONS - 1) {
-          const displayText = stripToolCallXml(log.response);
-          if (displayText) useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: displayText });
-        }
       }
 
       if (appliedActions.length > 0) {
