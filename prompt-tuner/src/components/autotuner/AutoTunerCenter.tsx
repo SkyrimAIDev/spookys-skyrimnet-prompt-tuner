@@ -163,11 +163,22 @@ function PostTuningChatInput() {
     const appliedActions: string[] = [];
 
     try {
+      let isToolIteration = false;
+
       for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+        useAutoTunerStore.getState().clearPostTuningStream();
+
+        // Show a working indicator during tool iterations (not for the first call)
+        if (isToolIteration) {
+          useAutoTunerStore.getState().appendPostTuningStream("Working on it...");
+        }
+
         const log = await sendLlmRequest({
           messages: currentMessages,
           agent: "tuner",
-          onChunk: (chunk) => { useAutoTunerStore.getState().appendPostTuningStream(chunk); },
+          onChunk: isToolIteration
+            ? undefined  // Don't stream tool iterations — just show "Working on it..."
+            : (chunk) => { useAutoTunerStore.getState().appendPostTuningStream(chunk); },
           signal: controller.signal,
         });
 
@@ -176,13 +187,17 @@ function PostTuningChatInput() {
         const toolCalls = parseToolCalls(log.response);
 
         if (toolCalls.length === 0) {
-          // No tool calls — final response
+          // Final response — already streamed (or set all at once for tool iterations)
+          if (isToolIteration) {
+            // Tool iteration final — wasn't streamed, set it now
+            useAutoTunerStore.getState().clearPostTuningStream();
+            useAutoTunerStore.getState().appendPostTuningStream(log.response);
+          }
           useAutoTunerStore.getState().addPostTuningMessage({ role: "assistant", content: log.response });
           break;
         }
 
-        // Execute tool calls and collect results
-        const displayText = stripToolCallXml(log.response);
+        // Execute tool calls silently
         const toolResults: string[] = [];
         const ctx = {
           rounds: useAutoTunerStore.getState().rounds,
@@ -197,16 +212,12 @@ function PostTuningChatInput() {
           if (applied) appliedActions.push(applied);
         }
 
-        // Don't show intermediate tool-call iterations to user — only final response
-        // Just clear the stream so the next iteration can stream fresh
-        useAutoTunerStore.getState().clearPostTuningStream();
-
-        // Add assistant response and tool results to message chain for next iteration
         currentMessages = [
           ...currentMessages,
           { role: "assistant" as const, content: log.response },
           { role: "user" as const, content: toolResults.join("\n\n") },
         ];
+        isToolIteration = true;
       }
 
       // Report applied actions

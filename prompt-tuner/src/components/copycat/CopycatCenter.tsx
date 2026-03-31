@@ -161,17 +161,31 @@ function CopycatPostTuningChatInput() {
     const appliedActions: string[] = [];
 
     try {
+      let isToolIteration = false;
+
       for (let iteration = 0; iteration < MAX_COPYCAT_TOOL_ITERATIONS; iteration++) {
+        useCopycatStore.getState().clearPostTuningStream();
+
+        if (isToolIteration) {
+          useCopycatStore.getState().appendPostTuningStream("Working on it...");
+        }
+
         const log = await sendLlmRequest({
           messages: currentMessages,
           agent: "tuner",
-          onChunk: (chunk) => { useCopycatStore.getState().appendPostTuningStream(chunk); },
+          onChunk: isToolIteration
+            ? undefined
+            : (chunk) => { useCopycatStore.getState().appendPostTuningStream(chunk); },
           signal: controller.signal,
         });
         if (log.error) break;
 
         const toolCalls = parseToolCalls(log.response);
         if (toolCalls.length === 0) {
+          if (isToolIteration) {
+            useCopycatStore.getState().clearPostTuningStream();
+            useCopycatStore.getState().appendPostTuningStream(log.response);
+          }
           useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: log.response });
           break;
         }
@@ -198,14 +212,12 @@ function CopycatPostTuningChatInput() {
           if (applied) appliedActions.push(applied);
         }
 
-        // Don't show intermediate tool-call iterations — only final response
-        useCopycatStore.getState().clearPostTuningStream();
-
         currentMessages = [
           ...currentMessages,
           { role: "assistant" as const, content: log.response },
           { role: "user" as const, content: toolResults.join("\n\n") },
         ];
+        isToolIteration = true;
       }
 
       if (appliedActions.length > 0) {
