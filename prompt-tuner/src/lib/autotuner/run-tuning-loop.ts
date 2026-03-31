@@ -539,41 +539,85 @@ export async function runTuningLoop(
 
         // Apply prompt changes (non-fatal — bad search text shouldn't kill the loop)
         if (proposal.promptChanges.length > 0 && tuningTarget !== "settings") {
-          // Enforce editing mode constraints — reject changes to disallowed files
           const mode = promptEditingMode || "auto";
-          const { allowed, rejected } = enforcePromptEditingMode(
-            proposal.promptChanges, mode, category, customPromptPaths,
-          );
+          let pendingChanges = proposal.promptChanges;
+          const allApplied: import("@/types/autotuner").PromptChange[] = [];
+          const MAX_REDIRECT_RETRIES = 2;
 
-          // Merge rejected changes back with [BLOCKED] markers
-          const allChanges = [...allowed];
+          for (let retry = 0; retry <= MAX_REDIRECT_RETRIES; retry++) {
+            const { allowed, rejected } = enforcePromptEditingMode(
+              pendingChanges, mode, category, customPromptPaths,
+            );
 
-          // Create temp set if not already created
-          if (allowed.length > 0 && !tempSetCreated) {
-            await createTunerTempSet();
-            workingPromptSet = TUNER_TEMP_SET;
-            store.setWorkingPromptSet(workingPromptSet);
-            tempSetCreated = true;
+            // Create temp set if needed
+            if (allowed.length > 0 && !tempSetCreated) {
+              await createTunerTempSet();
+              workingPromptSet = TUNER_TEMP_SET;
+              store.setWorkingPromptSet(workingPromptSet);
+              tempSetCreated = true;
+            }
+
+            try {
+              if (allowed.length > 0) {
+                const applied = await applyPromptChanges(allowed, sourceSetName);
+                allApplied.push(...applied);
+              }
+            } catch (promptErr: unknown) {
+              console.warn(`[tuner] Prompt apply error: ${promptErr instanceof Error ? promptErr.message : "unknown"}`);
+            }
+
+            // If no rejected changes or we've exhausted retries, done
+            if (rejected.length === 0 || retry === MAX_REDIRECT_RETRIES || abortController.signal.aborted) break;
+
+            // Ask the LLM to redirect rejected changes into the allowed files
+            _t(`REDIRECT RETRY ${retry + 1} — ${rejected.length} blocked changes`);
+            store.setStatusMessage(`Redirecting ${rejected.length} blocked change${rejected.length !== 1 ? "s" : ""} to allowed files...`);
+
+            const allowedFileNames = (mode === "recommended"
+              ? (await import("./prompt-editing-modes")).RECOMMENDED_PROMPTS[category]
+              : mode === "world_settings"
+                ? ["submodules/system_head/0010_setting.prompt"]
+                : customPromptPaths
+            )?.map((p) => p.split("/").pop()) || [];
+
+            const redirectPrompt = `The following prompt changes were BLOCKED because they target files outside your allowed list. You may ONLY edit: ${allowedFileNames.join(", ")}.
+
+Blocked changes that need to be redirected:
+${rejected.map((c) => `- Tried to ${c.searchText ? "edit" : "create"} "${c.filePath.split("/").pop()}": ${c.reason}`).join("\n")}
+
+Please propose new prompt_changes that incorporate the SAME improvements into the ALLOWED files listed above. Respond with the same JSON format.`;
+
+            try {
+              const redirectMessages: import("@/types/llm").ChatMessage[] = [
+                ...proposalMessages,
+                { role: "assistant", content: proposalLog.response },
+                { role: "user", content: redirectPrompt },
+              ];
+              const redirectLog = await sendLlmRequest({
+                messages: redirectMessages,
+                agent: "tuner",
+                signal: abortController.signal,
+              });
+              if (redirectLog.error || abortController.signal.aborted) break;
+              const redirectProposal = parseProposal(redirectLog.response);
+              pendingChanges = redirectProposal.promptChanges;
+              // Also apply any additional settings changes from the redirect
+              if (redirectProposal.settingsChanges.length > 0) {
+                workingSettings = applySettingsChanges(workingSettings, redirectProposal.settingsChanges);
+                store.setWorkingSettings(workingSettings);
+              }
+            } catch {
+              break; // Redirect failed, move on
+            }
           }
 
-          try {
-            const appliedPrompts = allowed.length > 0
-              ? await applyPromptChanges(allowed, sourceSetName)
-              : [];
-            // Combine applied + rejected for the round display
-            const combinedPrompts = [...appliedPrompts, ...rejected];
-            // Update proposal with actual content (applied + blocked)
-            const currentProposal = useAutoTunerStore.getState().rounds[roundIdx]?.proposal;
-            if (currentProposal) {
-              store.setRoundProposal(roundIdx, {
-                ...currentProposal,
-                promptChanges: combinedPrompts,
-              }, proposalLog.response);
-            }
-          } catch (promptErr: unknown) {
-            const msg = promptErr instanceof Error ? promptErr.message : "Prompt change failed";
-            console.warn(`[tuner] Prompt change failed in round ${round}: ${msg}`);
-            store.setRoundError(roundIdx, msg);
+          // Update proposal with all applied changes
+          const currentProposal = useAutoTunerStore.getState().rounds[roundIdx]?.proposal;
+          if (currentProposal) {
+            store.setRoundProposal(roundIdx, {
+              ...currentProposal,
+              promptChanges: allApplied,
+            }, proposalLog.response);
           }
         }
 

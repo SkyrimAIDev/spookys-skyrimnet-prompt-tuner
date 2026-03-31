@@ -363,35 +363,76 @@ export async function runCopycatLoop(params: CopycatLoopParams) {
 
         // Apply prompt changes (non-fatal — bad search text shouldn't kill the loop)
         if (parsed.proposal.promptChanges.length > 0 && tuningTarget !== "settings") {
-          // Enforce editing mode constraints
           const mode = promptEditingMode || "auto";
-          const { allowed, rejected } = enforcePromptEditingMode(
-            parsed.proposal.promptChanges, mode, "dialogue", customPromptPaths,
-          );
+          let pendingChanges = parsed.proposal.promptChanges;
+          const allApplied: import("@/types/autotuner").PromptChange[] = [];
+          const MAX_REDIRECT_RETRIES = 2;
 
-          if (allowed.length > 0 && !tempSetCreated) {
-            await createTunerTempSet();
-            workingPromptSet = TUNER_TEMP_SET;
-            store.setWorkingPromptSet(workingPromptSet);
-            tempSetCreated = true;
+          for (let retry = 0; retry <= MAX_REDIRECT_RETRIES; retry++) {
+            const { allowed, rejected } = enforcePromptEditingMode(
+              pendingChanges, mode, "dialogue", customPromptPaths,
+            );
+
+            if (allowed.length > 0 && !tempSetCreated) {
+              await createTunerTempSet();
+              workingPromptSet = TUNER_TEMP_SET;
+              store.setWorkingPromptSet(workingPromptSet);
+              tempSetCreated = true;
+            }
+
+            try {
+              if (allowed.length > 0) {
+                const applied = await applyPromptChanges(allowed, sourceSetName);
+                allApplied.push(...applied);
+              }
+            } catch (promptErr: unknown) {
+              console.warn(`[copycat] Prompt apply error: ${promptErr instanceof Error ? promptErr.message : "unknown"}`);
+            }
+
+            if (rejected.length === 0 || retry === MAX_REDIRECT_RETRIES || abortController.signal.aborted) break;
+
+            store.setStatusMessage(`Redirecting ${rejected.length} blocked change${rejected.length !== 1 ? "s" : ""} to allowed files...`);
+
+            const allowedFileNames = (mode === "recommended"
+              ? (await import("@/lib/autotuner/prompt-editing-modes")).RECOMMENDED_PROMPTS.dialogue
+              : mode === "world_settings"
+                ? ["submodules/system_head/0010_setting.prompt"]
+                : customPromptPaths
+            )?.map((p) => p.split("/").pop()) || [];
+
+            const redirectPrompt = `The following prompt changes were BLOCKED because they target files outside your allowed list. You may ONLY edit: ${allowedFileNames.join(", ")}.
+
+Blocked changes that need to be redirected:
+${rejected.map((c) => `- Tried to ${c.searchText ? "edit" : "create"} "${c.filePath.split("/").pop()}": ${c.reason}`).join("\n")}
+
+Please propose new prompt_changes that incorporate the SAME improvements into the ALLOWED files listed above. Respond with the same JSON format.`;
+
+            try {
+              const redirectMessages: import("@/types/llm").ChatMessage[] = [
+                ...copycatMessages,
+                { role: "assistant", content: copycatLog.response },
+                { role: "user", content: redirectPrompt },
+              ];
+              const redirectLog = await sendLlmRequest({
+                messages: redirectMessages,
+                agent: "tuner",
+                signal: abortController.signal,
+              });
+              if (redirectLog.error || abortController.signal.aborted) break;
+              const { parseCopycatResponse: parseCR } = await import("./parse-copycat-response");
+              const redirectParsed = parseCR(redirectLog.response);
+              pendingChanges = redirectParsed.proposal.promptChanges;
+            } catch {
+              break;
+            }
           }
 
-          try {
-            const appliedPrompts = allowed.length > 0
-              ? await applyPromptChanges(allowed, sourceSetName)
-              : [];
-            const combinedPrompts = [...appliedPrompts, ...rejected];
-            const currentProposal = useCopycatStore.getState().rounds[roundIdx]?.proposal;
-            if (currentProposal) {
-              store.setRoundProposal(roundIdx, {
-                ...currentProposal,
-                promptChanges: combinedPrompts,
-              }, copycatLog.response);
-            }
-          } catch (promptErr: unknown) {
-            const msg = promptErr instanceof Error ? promptErr.message : "Prompt change failed";
-            console.warn(`[copycat] Prompt change failed in round ${round}: ${msg}`);
-            store.setRoundError(roundIdx, msg);
+          const currentProposal = useCopycatStore.getState().rounds[roundIdx]?.proposal;
+          if (currentProposal) {
+            store.setRoundProposal(roundIdx, {
+              ...currentProposal,
+              promptChanges: allApplied,
+            }, copycatLog.response);
           }
         }
 

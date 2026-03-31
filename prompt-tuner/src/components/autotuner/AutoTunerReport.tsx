@@ -243,8 +243,9 @@ export function AutoTunerReport() {
                               ? "Stopped — performing well"
                               : round.proposal
                                 ? (() => {
-                                    const skipped = round.proposal.promptChanges.filter(c => c.reason?.startsWith("[SKIPPED]"));
-                                    const applied = round.proposal.promptChanges.length - skipped.length;
+                                    const skipped = round.proposal.promptChanges.filter(c => c.reason?.startsWith("[SKIPPED]") || c.reason?.startsWith("[BLOCKED]"));
+                                    const redirected = round.proposal.promptChanges.filter(c => c.reason?.startsWith("[REDIRECTED]"));
+                                    const applied = round.proposal.promptChanges.length - skipped.length - redirected.length;
                                     const parts: string[] = [];
                                     if (round.proposal.settingsChanges.length > 0) parts.push(`${round.proposal.settingsChanges.length} setting${round.proposal.settingsChanges.length !== 1 ? "s" : ""}`);
                                     if (applied > 0) parts.push(`${applied} prompt change${applied !== 1 ? "s" : ""}`);
