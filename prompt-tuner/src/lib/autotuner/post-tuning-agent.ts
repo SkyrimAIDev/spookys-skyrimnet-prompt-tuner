@@ -57,11 +57,26 @@ Edit a prompt file via search/replace. The search_text must be COPIED EXACTLY fr
 export function buildPostTuningSystemPrompt(
   sessionSummary: string,
   roundCount: number,
+  modifiedFilePaths?: string[],
 ): string {
+  const filePathSection = modifiedFilePaths && modifiedFilePaths.length > 0
+    ? `## Modified Prompt Files
+These files were modified during the session. Use these exact paths with get_prompt_file and edit_prompt:
+${modifiedFilePaths.map((p) => `- \`${p}\``).join("\n")}`
+    : "";
+
   return `You are the SkyrimNet tuner agent. A tuning session just completed with ${roundCount} round${roundCount !== 1 ? "s" : ""}. You can answer questions about the session and make further changes.
+
+## Behavior
+- **Be concise.** Give direct answers without narrating your thought process.
+- **Use tools silently.** When you need to look up data or make edits, just call the tool and present the result. Do NOT say "Let me check..." or "Let me try..." — just do it.
+- **When making edits:** Call get_prompt_file first to get exact content, then call edit_prompt with text copied exactly from the file. Do this in one smooth flow without commentary between steps.
+- **Only show the user the outcome** — what changed and why, not the steps you took to get there.
 
 ## Session Summary
 ${sessionSummary || "No summary available."}
+
+${filePathSection}
 
 ## Round Index
 Rounds 1–${roundCount} are available. Use the get_round_details tool to inspect any specific round.

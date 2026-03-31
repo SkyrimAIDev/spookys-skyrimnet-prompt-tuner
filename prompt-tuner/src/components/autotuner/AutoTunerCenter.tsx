@@ -140,9 +140,18 @@ function PostTuningChatInput() {
     store.setIsPostTuningStreaming(true);
     store.clearPostTuningStream();
 
+    // Collect file paths modified during the session
+    const modifiedPaths = new Set<string>();
+    for (const r of store.rounds) {
+      for (const pc of r.proposal?.promptChanges || []) {
+        if (pc.filePath && !pc.reason?.startsWith("[SKIPPED]")) modifiedPaths.add(pc.filePath);
+      }
+    }
+
     const systemPrompt = buildPostTuningSystemPrompt(
       store.sessionSummary,
       store.rounds.length,
+      [...modifiedPaths],
     );
 
     // Agent loop: send message, check for tool calls, execute, feed results back
@@ -188,10 +197,8 @@ function PostTuningChatInput() {
           if (applied) appliedActions.push(applied);
         }
 
-        // Add the display text as a message BEFORE clearing stream, so there's no flash
-        if (displayText) {
-          useAutoTunerStore.getState().addPostTuningMessage({ role: "assistant", content: displayText });
-        }
+        // Don't show intermediate tool-call iterations to user — only final response
+        // Just clear the stream so the next iteration can stream fresh
         useAutoTunerStore.getState().clearPostTuningStream();
 
         // Add assistant response and tool results to message chain for next iteration

@@ -144,9 +144,17 @@ function CopycatPostTuningChatInput() {
     store.setIsPostTuningStreaming(true);
     store.clearPostTuningStream();
 
+    const modifiedPaths = new Set<string>();
+    for (const r of store.rounds) {
+      for (const pc of r.proposal?.promptChanges || []) {
+        if (pc.filePath && !pc.reason?.startsWith("[SKIPPED]")) modifiedPaths.add(pc.filePath);
+      }
+    }
+
     const systemPrompt = buildPostTuningSystemPrompt(
       store.sessionSummary,
       store.rounds.length,
+      [...modifiedPaths],
     );
 
     let currentMessages = buildAgentMessages(systemPrompt, store.postTuningMessages, text);
@@ -190,11 +198,7 @@ function CopycatPostTuningChatInput() {
           if (applied) appliedActions.push(applied);
         }
 
-        // Add display text as message BEFORE clearing stream to avoid flash
-        const displayText = stripToolCallXml(log.response);
-        if (displayText) {
-          useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: displayText });
-        }
+        // Don't show intermediate tool-call iterations — only final response
         useCopycatStore.getState().clearPostTuningStream();
 
         currentMessages = [
