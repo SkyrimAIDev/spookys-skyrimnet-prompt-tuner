@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCopycatStore } from "@/stores/copycatStore";
 import { ProposalDisplay } from "@/components/shared/ProposalDisplay";
+import { ChatChangeDisplay, hasStructuredChanges } from "@/components/shared/ChatChangeDisplay";
 import { SessionSummaryPanel } from "@/components/shared/SessionSummaryPanel";
 import { sendLlmRequest } from "@/lib/llm/client";
 import {
@@ -15,6 +16,7 @@ import {
   stripToolCallXml,
   executeToolCall,
   buildAgentMessages,
+  type AppliedChange,
 } from "@/lib/autotuner/post-tuning-agent";
 import type { CopycatPhase, CopycatRound, CopycatDialogueTurn } from "@/types/copycat";
 import type { AiTuningSettings } from "@/types/config";
@@ -158,7 +160,7 @@ function CopycatPostTuningChatInput() {
     );
 
     let currentMessages = buildAgentMessages(systemPrompt, store.postTuningMessages, text);
-    const appliedActions: string[] = [];
+    const appliedActions: AppliedChange[] = [];
 
     try {
       useCopycatStore.getState().appendPostTuningStream("Working on it...");
@@ -208,7 +210,16 @@ function CopycatPostTuningChatInput() {
       }
 
       if (appliedActions.length > 0) {
-        useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: `Changes applied: ${appliedActions.join(", ")}` });
+        const changeLines: string[] = [];
+        for (const action of appliedActions) {
+          if (action.type === "settings" && action.settingsChanges) {
+            changeLines.push("__SETTINGS_TABLE__" + JSON.stringify(action.settingsChanges));
+          }
+          if (action.type === "prompt" && action.promptChanges) {
+            changeLines.push("__PROMPT_DIFF__" + JSON.stringify(action.promptChanges));
+          }
+        }
+        useCopycatStore.getState().addPostTuningMessage({ role: "assistant", content: changeLines.join("\n") });
       }
     } catch {
       const partial = useCopycatStore.getState().postTuningStream;
@@ -421,7 +432,10 @@ export function CopycatCenter() {
                       <CopycatCopyButton text={msg.content} />
                     )}
                   </div>
-                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                  {hasStructuredChanges(msg.content)
+                    ? <ChatChangeDisplay content={msg.content} />
+                    : <div className="whitespace-pre-wrap">{msg.content}</div>
+                  }
                 </div>
               ))}
               {postTuningStream && (

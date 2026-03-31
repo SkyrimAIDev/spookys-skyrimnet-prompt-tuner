@@ -2,6 +2,7 @@
 
 import type { TunerRound } from "@/types/autotuner";
 import { CheckCircle2 } from "lucide-react";
+import { ExpandableDiffBox } from "./ChatChangeDisplay";
 
 export function ProposalDisplay({ proposal }: { proposal: NonNullable<TunerRound["proposal"]> }) {
   if (proposal.stopTuning) {
@@ -62,12 +63,8 @@ export function ProposalDisplay({ proposal }: { proposal: NonNullable<TunerRound
               </div>
               <div className="text-xs text-muted-foreground break-words">{pc.reason}</div>
               <div className="grid grid-cols-2 gap-1 text-[10px] min-w-0">
-                <div className="bg-red-500/10 rounded p-1.5 font-mono whitespace-pre-wrap max-h-20 overflow-auto break-all min-w-0">
-                  {pc.searchText}
-                </div>
-                <div className="bg-green-500/10 rounded p-1.5 font-mono whitespace-pre-wrap max-h-20 overflow-auto break-all min-w-0">
-                  {pc.replaceText}
-                </div>
+                <ExpandableDiffBox content={pc.searchText} variant="removed" title={`${pc.filePath.split("/").pop()} — Before`} />
+                <ExpandableDiffBox content={pc.replaceText} variant="added" title={`${pc.filePath.split("/").pop()} — After`} />
               </div>
             </div>
           ))}

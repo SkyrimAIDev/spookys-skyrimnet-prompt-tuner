@@ -108,10 +108,17 @@ export interface ToolContext {
   getCopycatRoundExtra?: (roundIdx: number) => string;
 }
 
+export interface AppliedChange {
+  type: "settings" | "prompt";
+  summary: string;
+  settingsChanges?: { parameter: string; oldValue: unknown; newValue: unknown; reason: string }[];
+  promptChanges?: { filePath: string; searchText: string; replaceText: string; reason: string }[];
+}
+
 export async function executeToolCall(
   call: ToolCall,
   ctx: ToolContext,
-): Promise<{ result: string; applied?: string }> {
+): Promise<{ result: string; applied?: AppliedChange }> {
   switch (call.name) {
     case "get_round_details": {
       const num = parseInt(call.args.round_number);
@@ -208,10 +215,19 @@ export async function executeToolCall(
         if (parsed.settingsChanges.length === 0) return { result: "No valid settings changes found." };
         const newSettings = applySettingsChanges(ctx.workingSettings, parsed.settingsChanges);
         ctx.setWorkingSettings(newSettings);
-        const applied = parsed.settingsChanges.map(
-          (c) => `${c.parameter}: ${JSON.stringify(c.oldValue)} → ${JSON.stringify(c.newValue)}`
-        ).join(", ");
-        return { result: `Settings updated: ${applied}`, applied: `${parsed.settingsChanges.length} setting${parsed.settingsChanges.length !== 1 ? "s" : ""} updated` };
+        return {
+          result: `Settings updated: ${parsed.settingsChanges.map((c) => `${c.parameter}: ${JSON.stringify(c.oldValue)} → ${JSON.stringify(c.newValue)}`).join(", ")}`,
+          applied: {
+            type: "settings",
+            summary: `${parsed.settingsChanges.length} setting${parsed.settingsChanges.length !== 1 ? "s" : ""} updated`,
+            settingsChanges: parsed.settingsChanges.map((c) => ({
+              parameter: String(c.parameter),
+              oldValue: c.oldValue,
+              newValue: c.newValue,
+              reason: c.reason,
+            })),
+          },
+        };
       } catch (e) {
         return { result: `Error parsing settings changes: ${(e as Error).message}` };
       }
@@ -231,7 +247,19 @@ export async function executeToolCall(
         const success = results.filter((c) => !c.reason?.startsWith("[SKIPPED]"));
         const skipped = results.filter((c) => c.reason?.startsWith("[SKIPPED]"));
         if (success.length > 0) {
-          return { result: `Prompt edited successfully: ${file_path.split("/").pop()}`, applied: `${success.length} prompt edit${success.length !== 1 ? "s" : ""} applied` };
+          return {
+            result: `Prompt edited successfully: ${file_path.split("/").pop()}`,
+            applied: {
+              type: "prompt",
+              summary: `${success.length} prompt edit${success.length !== 1 ? "s" : ""} applied`,
+              promptChanges: success.map((c) => ({
+                filePath: c.filePath,
+                searchText: c.searchText || "",
+                replaceText: c.replaceText || "",
+                reason: c.reason || "",
+              })),
+            },
+          };
         } else if (skipped.length > 0) {
           return { result: `Edit skipped — search text not found in ${file_path.split("/").pop()}. Use get_prompt_file to see the current content and try again with exact text.` };
         }

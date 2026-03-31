@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAutoTunerStore } from "@/stores/autoTunerStore";
 import { ProposalDisplay } from "@/components/shared/ProposalDisplay";
+import { ChatChangeDisplay, hasStructuredChanges } from "@/components/shared/ChatChangeDisplay";
 import { SessionSummaryPanel } from "@/components/shared/SessionSummaryPanel";
 import { sendLlmRequest } from "@/lib/llm/client";
 import {
@@ -15,6 +16,7 @@ import {
   executeToolCall,
   buildAgentMessages,
   type ToolCall,
+  type AppliedChange,
 } from "@/lib/autotuner/post-tuning-agent";
 import type { TunerPhase, TunerRound } from "@/types/autotuner";
 import type { AiTuningSettings } from "@/types/config";
@@ -160,7 +162,7 @@ function PostTuningChatInput() {
       store.postTuningMessages,
       text,
     );
-    const appliedActions: string[] = [];
+    const appliedActions: AppliedChange[] = [];
 
     try {
       // Show a working indicator while the agent processes (no streaming to avoid flashing)
@@ -206,11 +208,20 @@ function PostTuningChatInput() {
         ];
       }
 
-      // Report applied actions
+      // Report applied actions with structured display
       if (appliedActions.length > 0) {
+        const changeLines: string[] = [];
+        for (const action of appliedActions) {
+          if (action.type === "settings" && action.settingsChanges) {
+            changeLines.push("__SETTINGS_TABLE__" + JSON.stringify(action.settingsChanges));
+          }
+          if (action.type === "prompt" && action.promptChanges) {
+            changeLines.push("__PROMPT_DIFF__" + JSON.stringify(action.promptChanges));
+          }
+        }
         useAutoTunerStore.getState().addPostTuningMessage({
           role: "assistant",
-          content: `Changes applied: ${appliedActions.join(", ")}`,
+          content: changeLines.join("\n"),
         });
       }
     } catch {
@@ -420,7 +431,10 @@ export function AutoTunerCenter() {
                       <CopyButton text={msg.content} />
                     )}
                   </div>
-                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                  {hasStructuredChanges(msg.content)
+                    ? <ChatChangeDisplay content={msg.content} />
+                    : <div className="whitespace-pre-wrap">{msg.content}</div>
+                  }
                 </div>
               ))}
               {postTuningStream && (
