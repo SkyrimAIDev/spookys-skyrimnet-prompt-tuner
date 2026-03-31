@@ -314,34 +314,66 @@ export function AutoTunerCenter() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  const [showJumpButton, setShowJumpButton] = useState(false);
 
-  // Auto-scroll to bottom during streaming
+  // Detect user scroll — if they scroll away from bottom, pause auto-scroll
   useEffect(() => {
-    if (isRunning && scrollRef.current) {
+    const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
+    if (!viewport) return;
+    const handleScroll = () => {
+      const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
+      if (atBottom) {
+        setAutoScrollEnabled(true);
+        setShowJumpButton(false);
+      } else if (isRunning) {
+        // Only show jump button and pause if actually running
+        setAutoScrollEnabled(false);
+        setShowJumpButton(true);
+      }
+    };
+    viewport.addEventListener("scroll", handleScroll);
+    return () => viewport.removeEventListener("scroll", handleScroll);
+  }, [isRunning]);
+
+  // Reset auto-scroll when a new run starts
+  useEffect(() => {
+    if (isRunning) { setAutoScrollEnabled(true); setShowJumpButton(false); }
+  }, [isRunning]);
+
+  const jumpToLatest = useCallback(() => {
+    const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+    setAutoScrollEnabled(true);
+    setShowJumpButton(false);
+  }, []);
+
+  // Auto-scroll to bottom during streaming (only if enabled)
+  useEffect(() => {
+    if (autoScrollEnabled && isRunning && scrollRef.current) {
       const viewport = scrollRef.current.closest("[data-radix-scroll-area-viewport]");
       if (viewport) viewport.scrollTop = viewport.scrollHeight;
     }
-  }, [explanationStream, assessmentStream, proposalStream, isRunning, rounds, statusMessage]);
+  }, [explanationStream, assessmentStream, proposalStream, isRunning, rounds, statusMessage, autoScrollEnabled]);
 
   // Auto-scroll to summary when it appears
   useEffect(() => {
-    if ((sessionSummary || summaryStream) && summaryRef.current) {
+    if (autoScrollEnabled && (sessionSummary || summaryStream) && summaryRef.current) {
       summaryRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [sessionSummary, summaryStream ? "streaming" : ""]);
+  }, [sessionSummary, summaryStream ? "streaming" : "", autoScrollEnabled]);
 
   // Auto-scroll to bottom on new chat messages or streaming
   useEffect(() => {
-    if ((postTuningMessages.length > 0 || postTuningStream) && scrollRef.current) {
+    if (autoScrollEnabled && (postTuningMessages.length > 0 || postTuningStream) && scrollRef.current) {
       requestAnimationFrame(() => {
-        // ScrollArea viewport is the actual scrollable parent
         const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
         if (viewport) {
           viewport.scrollTop = viewport.scrollHeight;
         }
       });
     }
-  }, [postTuningMessages, postTuningStream]);
+  }, [postTuningMessages, postTuningStream, autoScrollEnabled]);
 
   if (phase === "idle" && rounds.length === 0) {
     return (
@@ -400,7 +432,8 @@ export function AutoTunerCenter() {
       </div>
 
       {/* Rounds + Summary in scrollable area */}
-      <ScrollArea className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden relative">
+      <ScrollArea className="h-full">
         <div ref={scrollRef} className="p-4 space-y-3 min-w-0">
           {rounds.map((round, idx) => (
             <TunerRoundCard
@@ -470,6 +503,18 @@ export function AutoTunerCenter() {
           )}
         </div>
       </ScrollArea>
+
+      {/* Jump to latest button — appears when user scrolls away during a run */}
+      {showJumpButton && (
+        <button
+          onClick={jumpToLatest}
+          className="absolute bottom-3 right-5 z-10 flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-[10px] font-medium text-primary-foreground shadow-lg hover:bg-primary/90 transition-colors"
+        >
+          <ChevronDown className="h-3 w-3" />
+          Jump to latest
+        </button>
+      )}
+      </div>
 
       {/* Chat input — pinned at bottom outside ScrollArea */}
       {phase === "complete" && !isRunning && (
