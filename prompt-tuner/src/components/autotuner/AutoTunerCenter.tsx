@@ -163,22 +163,13 @@ function PostTuningChatInput() {
     const appliedActions: string[] = [];
 
     try {
-      let isToolIteration = false;
+      // Show a working indicator while the agent processes (no streaming to avoid flashing)
+      useAutoTunerStore.getState().appendPostTuningStream("Working on it...");
 
       for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
-        useAutoTunerStore.getState().clearPostTuningStream();
-
-        // Show a working indicator during tool iterations (not for the first call)
-        if (isToolIteration) {
-          useAutoTunerStore.getState().appendPostTuningStream("Working on it...");
-        }
-
         const log = await sendLlmRequest({
           messages: currentMessages,
           agent: "tuner",
-          onChunk: isToolIteration
-            ? undefined  // Don't stream tool iterations — just show "Working on it..."
-            : (chunk) => { useAutoTunerStore.getState().appendPostTuningStream(chunk); },
           signal: controller.signal,
         });
 
@@ -187,12 +178,8 @@ function PostTuningChatInput() {
         const toolCalls = parseToolCalls(log.response);
 
         if (toolCalls.length === 0) {
-          // Final response — already streamed (or set all at once for tool iterations)
-          if (isToolIteration) {
-            // Tool iteration final — wasn't streamed, set it now
-            useAutoTunerStore.getState().clearPostTuningStream();
-            useAutoTunerStore.getState().appendPostTuningStream(log.response);
-          }
+          // Final response — display it
+          useAutoTunerStore.getState().clearPostTuningStream();
           useAutoTunerStore.getState().addPostTuningMessage({ role: "assistant", content: log.response });
           break;
         }
@@ -217,7 +204,6 @@ function PostTuningChatInput() {
           { role: "assistant" as const, content: log.response },
           { role: "user" as const, content: toolResults.join("\n\n") },
         ];
-        isToolIteration = true;
       }
 
       // Report applied actions
