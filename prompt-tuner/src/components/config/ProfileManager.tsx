@@ -61,6 +61,11 @@ export function ProfileManager() {
     if (!profile) return;
     setActiveProfileId(id);
     applyProfile(profile.globalApiKey, profile.slots);
+    // Clear quick model override when switching profiles
+    try {
+      const { useSimulationStore } = require("@/stores/simulationStore");
+      useSimulationStore.getState().setQuickDialogueModel("");
+    } catch { /* ignore if store not available */ }
     toast.success(`Profile "${profile.name}" loaded`);
   };
 

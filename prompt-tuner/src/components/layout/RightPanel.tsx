@@ -57,6 +57,10 @@ export function RightPanel() {
   const activeProfileId = useProfileStore((s) => s.activeProfileId);
   const activeProfile = profiles.find((p) => p.id === activeProfileId);
   const activeModelName = activeProfile?.slots["default"]?.api?.modelNames || "";
+  const quickDialogueModel = useSimulationStore((s) => s.quickDialogueModel);
+  const multichatEnabled = useSimulationStore((s) => s.multichatEnabled);
+  const setQuickDialogueModel = useSimulationStore((s) => s.setQuickDialogueModel);
+  const setMultichatEnabled = useSimulationStore((s) => s.setMultichatEnabled);
 
   const [analysisOpen, setAnalysisOpen] = useState(false);
   const [memoryGenOpen, setMemoryGenOpen] = useState(false);
@@ -98,7 +102,33 @@ export function RightPanel() {
           <div className="text-xs font-medium truncate">{activeProfile.name}</div>
           {activeModelName && (
             <div className="text-[10px] text-muted-foreground font-mono truncate" title={activeModelName}>
-              {activeModelName}
+              {quickDialogueModel ? <span className="line-through opacity-50">{activeModelName}</span> : activeModelName}
+            </div>
+          )}
+          {quickDialogueModel && (
+            <div className="flex items-center gap-1 mt-0.5">
+              <div className="text-[10px] text-amber-400 font-mono truncate flex-1 min-w-0" title={quickDialogueModel}>
+                {quickDialogueModel}
+              </div>
+              <button
+                onClick={() => setQuickDialogueModel("")}
+                className="shrink-0 text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+          {multichatEnabled && (
+            <div className="flex items-center gap-1 mt-0.5">
+              <div className="text-[10px] text-cyan-400">
+                Multichat active
+              </div>
+              <button
+                onClick={() => setMultichatEnabled(false)}
+                className="shrink-0 text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 transition-colors"
+              >
+                Disable
+              </button>
             </div>
           )}
         </div>
