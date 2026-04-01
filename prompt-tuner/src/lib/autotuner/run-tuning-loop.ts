@@ -619,6 +619,7 @@ Please propose new prompt_changes that incorporate the SAME improvements into th
               promptChanges: allApplied,
             }, proposalLog.response);
           }
+
         }
 
         store.setRoundPhase(roundIdx, "complete");

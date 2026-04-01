@@ -78,9 +78,8 @@ ${pipelineGuide}
 
 ## Current Prompt Files
 
-The following prompt files are used by this agent. You can propose search/replace changes to modify them.
-You can also **create new submodule files** by using an empty \`search_text\` and providing the full file content in \`replace_text\` with a \`file_path\` for the new file. Use numbered naming (e.g. \`0015_\`, \`0550_\`) to control load order.
-**IMPORTANT:** The file_path in each section header is the exact path you must use in your prompt_changes proposals. Copy it exactly. For new files, construct the path using the same base directory as existing files in that submodule.
+The following prompt files are used by this agent. To modify a file, output the COMPLETE new file content in \`replace_text\` with \`search_text\` set to \`""\` (empty). This replaces the entire file.
+**IMPORTANT:** The file_path in each section header is the exact path you must use in your prompt_changes proposals. Preserve ALL template syntax (\`{{ }}\`, \`{% %}\`) exactly — only modify plain-text instructions.
 
 ${promptContent}`;
     } else {
@@ -226,8 +225,7 @@ Respond with a JSON object (no markdown fences):
     { "parameter": "temperature", "old_value": 1.0, "new_value": 0.8, "reason": "reduce creativity to match reference's more measured tone" }
   ]${canModifyPrompts ? `,
   "prompt_changes": [
-    { "file_path": "exact/path/from/section/header", "search_text": "exact text to find in file", "replace_text": "replacement text", "reason": "why this change helps" },
-    { "file_path": "path/to/new_file.prompt", "search_text": "", "replace_text": "full file content", "reason": "creating new submodule" }
+    { "file_path": "exact/path/from/section/header", "search_text": "", "replace_text": "THE COMPLETE NEW FILE CONTENT with your changes applied", "reason": "why this change helps" }
   ]` : ""},
   "verification_requests": ["custom dialogue line to test"]
 }

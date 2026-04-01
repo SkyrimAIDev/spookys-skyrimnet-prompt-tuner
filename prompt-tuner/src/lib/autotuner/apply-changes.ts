@@ -104,8 +104,23 @@ export async function applyPromptChanges(
   const applied: PromptChange[] = [];
 
   for (const change of changes) {
-    // Empty searchText = create a new file with replaceText as content
+    // Empty searchText = full file replacement (or create new file)
     if (!change.searchText || change.searchText.trim() === "") {
+      // Try to read existing content for diff display
+      let existingContent = "";
+      try {
+        let readUrl = `/api/files/read?path=${encodeURIComponent(change.filePath)}`;
+        if (sourceSetName && sourceSetName !== "__tuner_temp__") {
+          readUrl += `&fallback=${encodeURIComponent(sourceSetName)}`;
+        }
+        readUrl += `&fallback=__original__`;
+        const readResp = await fetch(readUrl);
+        if (readResp.ok) {
+          const data = await readResp.json();
+          existingContent = data.content || "";
+        }
+      } catch { /* new file, no original */ }
+
       const writeResp = await fetch("/api/files/write", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -113,12 +128,18 @@ export async function applyPromptChanges(
       });
 
       if (!writeResp.ok) {
-        throw new Error(`Failed to create ${change.filePath}: HTTP ${writeResp.status}`);
+        applied.push({
+          ...change,
+          originalContent: existingContent,
+          modifiedContent: "",
+          reason: `[SKIPPED] Failed to write file: HTTP ${writeResp.status}. ${change.reason}`,
+        });
+        continue;
       }
 
       applied.push({
         ...change,
-        originalContent: "",
+        originalContent: existingContent,
         modifiedContent: change.replaceText,
       });
       continue;

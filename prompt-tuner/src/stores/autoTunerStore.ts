@@ -26,6 +26,7 @@ function loadPersisted(): {
   lockedSettings: (keyof AiTuningSettingsType)[];
   customInstructions: string;
   ignoreFormatScoring: boolean;
+  isNarrationEnabled: boolean;
 } {
   const defaults = {
     selectedProfileId: "",
@@ -39,6 +40,7 @@ function loadPersisted(): {
     lockedSettings: ["maxTokens", "allowReasoning", "reasoningEffort", "structuredOutputs", "stopSequences"] as (keyof AiTuningSettingsType)[],
     customInstructions: "",
     ignoreFormatScoring: true,
+    isNarrationEnabled: true,
   };
   if (typeof window === "undefined") return defaults;
   try {
@@ -57,6 +59,7 @@ function loadPersisted(): {
         lockedSettings: data.lockedSettings ?? ["maxTokens", "allowReasoning", "reasoningEffort"],
         customInstructions: data.customInstructions ?? "",
         ignoreFormatScoring: data.ignoreFormatScoring ?? true,
+        isNarrationEnabled: data.isNarrationEnabled ?? true,
       };
     }
   } catch { /* ignore */ }
@@ -247,7 +250,10 @@ export const useAutoTunerStore = create<AutoTunerState>((set, get) => ({
     set({ ignoreFormatScoring: ignore });
     get().persist();
   },
-  setIsNarrationEnabled: (enabled) => set({ isNarrationEnabled: enabled }),
+  setIsNarrationEnabled: (enabled) => {
+    set({ isNarrationEnabled: enabled });
+    get().persist();
+  },
 
   // Run state actions
   setIsRunning: (running) => set({ isRunning: running }),
@@ -396,11 +402,11 @@ export const useAutoTunerStore = create<AutoTunerState>((set, get) => ({
 
   persist: () => {
     if (typeof window === "undefined") return;
-    const { selectedProfileId, selectedCategory, selectedScenarioId, selectedPromptSet, tuningTarget, promptEditingMode, customPromptPaths, maxRounds, lockedSettings, customInstructions, ignoreFormatScoring } = get();
+    const { selectedProfileId, selectedCategory, selectedScenarioId, selectedPromptSet, tuningTarget, promptEditingMode, customPromptPaths, maxRounds, lockedSettings, customInstructions, ignoreFormatScoring, isNarrationEnabled } = get();
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ selectedProfileId, selectedCategory, selectedScenarioId, selectedPromptSet, tuningTarget, promptEditingMode, customPromptPaths, maxRounds, lockedSettings, customInstructions, ignoreFormatScoring })
+        JSON.stringify({ selectedProfileId, selectedCategory, selectedScenarioId, selectedPromptSet, tuningTarget, promptEditingMode, customPromptPaths, maxRounds, lockedSettings, customInstructions, ignoreFormatScoring, isNarrationEnabled })
       );
     } catch { /* ignore */ }
   },

@@ -157,7 +157,7 @@ export function buildPromptEditingRules(category: BenchmarkCategory, mode: impor
   const newLocation = NEW_PROMPT_LOCATIONS[category];
 
   // Common rules for all modes
-  const commonRules = `9. **When modifying existing files:** Your \`search_text\` must be COPIED EXACTLY from the file content shown above — do NOT paraphrase, reword, or reconstruct from memory. Copy a short, unique portion of the text you want to replace (1-3 lines is ideal). The search must match the file verbatim, including punctuation, dashes, and line breaks. Never replace entire files or large blocks. Preserve all template syntax, section markers, and conditional branches exactly as they are.
+  const commonRules = `9. **When modifying files, output the COMPLETE new file content.** Set \`search_text\` to \`""\` and put the entire modified file in \`replace_text\`. Preserve ALL template syntax (\`{{ }}\`, \`{% %}\`, section markers, decorator calls) exactly as they appear — only change the plain-text instruction content.
 10. **Prompt changes must be universal.** These prompts are used for THOUSANDS of different NPC dialogues across all of Skyrim — guards, merchants, innkeepers, quest characters, companions, etc. Proposed changes must improve quality for ANY NPC in ANY context. NEVER propose changes specific to the current benchmark scenario.
 11. **Keep additions concise.** SkyrimNet has a default max context of 4096 tokens. The official docs warn: "Too many rules = more hallucinations." Add the minimum instruction needed. A single clear sentence beats a paragraph of explanation.`;
 
@@ -305,9 +305,8 @@ ${pipelineGuide}
 
 ## Current Prompt Files
 
-The following prompt files are used by this agent. You can propose search/replace changes to modify them.
-You can also **create new submodule files** by using an empty \`search_text\` and providing the full file content in \`replace_text\` with a \`file_path\` for the new file. Use numbered naming (e.g. \`0015_\`, \`0550_\`) to control load order — files load in numerical order within each submodule directory.
-**IMPORTANT:** The file_path in each section header is the exact path you must use in your prompt_changes proposals. Copy it exactly. For new files, construct the path using the same base directory as existing files in that submodule.
+The following prompt files are used by this agent. To modify a file, set \`search_text\` to \`""\` (empty) and put the COMPLETE new file content in \`replace_text\`. This replaces the entire file — output ALL of it with your modifications applied.
+**IMPORTANT:** The file_path in each section header is the exact path you must use in your prompt_changes proposals. Copy it exactly. Preserve ALL template syntax (\`{{ }}\`, \`{% %}\`) — only modify plain-text instructions.
 
 ${promptContent}`;
     } else {
@@ -381,7 +380,7 @@ ${previousRounds.map((r) => {
   // Allowed modifications section
   const allowedMods: string[] = [];
   if (canModifySettings) allowedMods.push("inference settings (temperature, topP, topK, maxTokens, penalties, etc.)");
-  if (canModifyPrompts) allowedMods.push("prompt file content (via search/replace edits)");
+  if (canModifyPrompts) allowedMods.push("prompt file content");
 
   const systemContent = `You are an expert AI tuner for SkyrimNet, an AI-powered NPC system for Skyrim.
 
@@ -439,10 +438,11 @@ Respond with a JSON object (no markdown fences):
     { "parameter": "temperature", "old_value": 0.7, "new_value": 0.5, "reason": "reduce randomness for more consistent responses" }
   ]${canModifyPrompts ? `,
   "prompt_changes": [
-    { "file_path": "/absolute/path/to/file.prompt", "search_text": "exact text to find", "replace_text": "replacement text", "reason": "why this change helps" },
-    { "file_path": "/absolute/path/to/new_file.prompt", "search_text": "", "replace_text": "full file content here", "reason": "creating new submodule file" }
+    { "file_path": "/absolute/path/to/file.prompt", "search_text": "", "replace_text": "THE COMPLETE NEW FILE CONTENT — output the entire file with your changes applied", "reason": "why this change helps" }
   ]` : ""}
 }
+
+**IMPORTANT for prompt_changes:** Always set \`search_text\` to \`""\` (empty string) and put the COMPLETE new file content in \`replace_text\`. This replaces the entire file. Do NOT try to do partial search/replace — output the full file with your modifications applied. Preserve all template syntax (\`{{ }}\`, \`{% %}\`), section markers, and decorator calls exactly as they appear in the original file. Only modify the plain-text instruction content.
 
 If no changes are needed for a category, use an empty array. Always include all fields.${!canModifyPrompts ? " Do NOT include prompt_changes — you are only tuning inference settings." : ""}`;
 
