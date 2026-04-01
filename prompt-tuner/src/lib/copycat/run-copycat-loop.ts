@@ -169,6 +169,12 @@ export async function runCopycatLoop(params: CopycatLoopParams) {
   };
   const targetApiKey = tgtOverride.apiKey || copycatApiKey;
 
+  if (!copycatApiKey) {
+    store.setPhase("error");
+    store.setIsRunning(false);
+    throw new Error("No API key configured. Set an API key in Settings or in the tuner agent's API override.");
+  }
+
   // Snapshot original settings from the store's startingSettings
   const originalSettings = { ...store.startingSettings };
   let workingSettings = { ...originalSettings };
@@ -482,8 +488,8 @@ Please propose new prompt_changes that incorporate the SAME improvements into th
         if (!summaryLog.error) {
           store.setSessionSummary(summaryLog.response);
         }
-      } catch {
-        // Non-critical
+      } catch (err) {
+        console.warn("[copycat] Summary generation failed:", err instanceof Error ? err.message : err);
       }
       store.setStatusMessage("");
     } else if (abortController.signal.aborted) {

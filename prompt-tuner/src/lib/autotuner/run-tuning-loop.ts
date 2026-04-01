@@ -83,6 +83,12 @@ export async function runTuningLoop(
   const apiKey = agentSlot.api.apiKey || profile.globalApiKey;
   _t(`resolved model=${model} apiKey=${apiKey ? "set" : "MISSING"}`);
 
+  if (!apiKey) {
+    store.setPhase("error");
+    store.setIsRunning(false);
+    throw new Error("No API key configured. Set an API key in Settings or in the profile's agent API override.");
+  }
+
   try {
     for (let round = 1; round <= maxRounds; round++) {
       if (abortController.signal.aborted) break;
@@ -667,8 +673,8 @@ Please propose new prompt_changes that incorporate the SAME improvements into th
         if (!summaryLog.error) {
           store.setSessionSummary(summaryLog.response);
         }
-      } catch {
-        // Summary generation is non-critical — don't fail the session
+      } catch (err) {
+        console.warn("[tuner] Summary generation failed:", err instanceof Error ? err.message : err);
       }
       store.setStatusMessage("");
     } else if (abortController.signal.aborted) {

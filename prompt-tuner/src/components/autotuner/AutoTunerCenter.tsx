@@ -560,25 +560,25 @@ function TunerRoundCard({
   const [proposalOpen, setProposalOpen] = useState(activeSection === "proposal");
 
   // Track which sections the user has manually toggled — auto-collapse respects these
-  const [userPinned] = useState(() => new Set<string>());
+  const userPinned = useRef(new Set<string>());
 
   // Wrap setters to track user interaction
-  const userToggleResponse = useCallback(() => { userPinned.add("response"); setResponseOpen((v) => !v); }, [userPinned]);
-  const userToggleExplanation = useCallback(() => { userPinned.add("explanation"); setExplanationOpen((v) => !v); }, [userPinned]);
-  const userToggleAssessment = useCallback(() => { userPinned.add("assessment"); setAssessOpen((v) => !v); }, [userPinned]);
-  const userToggleProposal = useCallback(() => { userPinned.add("proposal"); setProposalOpen((v) => !v); }, [userPinned]);
+  const userToggleResponse = useCallback(() => { userPinned.current.add("response"); setResponseOpen((v) => !v); }, []);
+  const userToggleExplanation = useCallback(() => { userPinned.current.add("explanation"); setExplanationOpen((v) => !v); }, []);
+  const userToggleAssessment = useCallback(() => { userPinned.current.add("assessment"); setAssessOpen((v) => !v); }, []);
+  const userToggleProposal = useCallback(() => { userPinned.current.add("proposal"); setProposalOpen((v) => !v); }, []);
 
   // Collapse all sections when summary appears (overrides user pins)
   useEffect(() => {
     if (forceCollapse) {
-      userPinned.clear();
+      userPinned.current.clear();
       setPromptOpen(false);
       setResponseOpen(false);
       setExplanationOpen(false);
       setAssessOpen(false);
       setProposalOpen(false);
     }
-  }, [forceCollapse, userPinned]);
+  }, [forceCollapse]);
 
   // Auto-expand the active section and collapse others when the phase advances.
   // Sections the user has manually toggled are left alone.
@@ -586,21 +586,21 @@ function TunerRoundCard({
     if (activeSection === null) {
       if (!isCurrentRound && round.phase === "complete") {
         // Round completed — collapse unpinned sections
-        if (!userPinned.has("response")) setResponseOpen(false);
-        if (!userPinned.has("explanation")) setExplanationOpen(false);
-        if (!userPinned.has("assessment")) setAssessOpen(false);
-        if (!userPinned.has("proposal")) setProposalOpen(false);
+        if (!userPinned.current.has("response")) setResponseOpen(false);
+        if (!userPinned.current.has("explanation")) setExplanationOpen(false);
+        if (!userPinned.current.has("assessment")) setAssessOpen(false);
+        if (!userPinned.current.has("proposal")) setProposalOpen(false);
         setTurnsOpen({});
       }
       return;
     }
     // Auto-expand active, collapse others unless user pinned them
-    if (!userPinned.has("response")) setResponseOpen(activeSection === "response");
-    if (!userPinned.has("explanation")) setExplanationOpen(activeSection === "explanation");
-    if (!userPinned.has("assessment")) setAssessOpen(activeSection === "assessment");
-    if (!userPinned.has("proposal")) setProposalOpen(activeSection === "proposal");
-    if (!userPinned.has("turns")) setTurnsOpen(activeSection === "response" ? {} : { 0: false });
-  }, [activeSection, isCurrentRound, round.phase, userPinned]);
+    if (!userPinned.current.has("response")) setResponseOpen(activeSection === "response");
+    if (!userPinned.current.has("explanation")) setExplanationOpen(activeSection === "explanation");
+    if (!userPinned.current.has("assessment")) setAssessOpen(activeSection === "assessment");
+    if (!userPinned.current.has("proposal")) setProposalOpen(activeSection === "proposal");
+    if (!userPinned.current.has("turns")) setTurnsOpen(activeSection === "response" ? {} : { 0: false });
+  }, [activeSection, isCurrentRound, round.phase]);
 
   const benchResult = round.benchmarkResult;
   const turnResults = round.turnResults;

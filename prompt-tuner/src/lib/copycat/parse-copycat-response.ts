@@ -1,22 +1,6 @@
 import type { TunerProposal, SettingsChange, PromptChange } from "@/types/autotuner";
 import type { AiTuningSettings } from "@/types/config";
-
-/** Normalize snake_case parameter names to camelCase store keys. */
-const PARAM_ALIASES: Record<string, keyof AiTuningSettings> = {
-  max_tokens: "maxTokens",
-  top_p: "topP",
-  top_k: "topK",
-  frequency_penalty: "frequencyPenalty",
-  presence_penalty: "presencePenalty",
-  stop_sequences: "stopSequences",
-  structured_outputs: "structuredOutputs",
-  allow_reasoning: "allowReasoning",
-  reasoning_effort: "reasoningEffort",
-};
-
-function normalizeParam(key: string): string {
-  return PARAM_ALIASES[key] || key;
-}
+import { normalizeParamKey } from "@/lib/constants/param-aliases";
 
 export interface CopycatParsedResponse {
   effectivenessScore: number;
@@ -83,7 +67,7 @@ export function parseCopycatResponse(raw: string): CopycatParsedResponse {
     for (const sc of rawSettings) {
       if (sc && typeof sc === "object" && "parameter" in sc) {
         settingsChanges.push({
-          parameter: normalizeParam(sc.parameter) as keyof AiTuningSettings,
+          parameter: normalizeParamKey(sc.parameter) as keyof AiTuningSettings,
           oldValue: sc.old_value ?? sc.oldValue ?? "",
           newValue: sc.new_value ?? sc.newValue ?? "",
           reason: sc.reason ?? "",
