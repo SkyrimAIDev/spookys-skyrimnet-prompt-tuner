@@ -132,7 +132,7 @@ export function BenchmarkSetup() {
                 No profiles found. Create profiles in Settings.
               </div>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-1 max-h-48 overflow-y-auto">
                 {profiles.map((profile) => {
                   const isSelected = selectedProfileIds.includes(profile.id);
                   return (
