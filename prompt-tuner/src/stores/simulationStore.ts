@@ -130,6 +130,9 @@ interface SimulationState {
   autochatStatus: "idle" | "running" | "cooldown";
   // Narration toggle
   isNarrationEnabled: boolean;
+  // Quick model override for single chat (empty = use active profile's model)
+  quickDialogueModel: string;
+
   // Multichat comparison
   multichatEnabled: boolean;
   multichatProfileIds: string[];  // persisted checked profiles
@@ -183,6 +186,8 @@ interface SimulationState {
   setAutochatDuration: (minutes: number) => void;
   setAutochatStartedAt: (timestamp: number | null) => void;
   setAutochatStatus: (status: "idle" | "running" | "cooldown") => void;
+  setQuickDialogueModel: (model: string) => void;
+
   // Multichat
   setMultichatEnabled: (enabled: boolean) => void;
   setMultichatProfileIds: (ids: string[]) => void;
@@ -233,6 +238,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   autochatStartedAt: null,
   autochatStatus: "idle",
   isNarrationEnabled: true,
+  quickDialogueModel: "",
   multichatEnabled: false,
   multichatProfileIds: [],
   multichatQuickModels: [],
@@ -401,6 +407,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   },
   setAutochatStartedAt: (timestamp) => set({ autochatStartedAt: timestamp }),
   setAutochatStatus: (status) => set({ autochatStatus: status }),
+  setQuickDialogueModel: (model) => set({ quickDialogueModel: model }),
   setMultichatEnabled: (enabled) => set({ multichatEnabled: enabled }),
   setMultichatProfileIds: (ids) => set({ multichatProfileIds: ids }),
   addMultichatQuickModel: (model: string) => {

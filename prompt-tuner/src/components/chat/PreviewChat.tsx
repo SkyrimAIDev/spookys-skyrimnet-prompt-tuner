@@ -350,18 +350,32 @@ export function PreviewChat() {
       } else {
         // ── STANDARD MODE ───────────────────────────────────────────
         let dialogueLog;
+        const quickModel = useSimulationStore.getState().quickDialogueModel;
+        const store = useConfigStore.getState();
         if (overrides && Object.keys(overrides).length > 0) {
-          const store = useConfigStore.getState();
           const baseSlot = store.slots["default"];
           const mixedSlot = {
             ...baseSlot,
             tuning: { ...baseSlot.tuning, ...overrides },
           };
+          const quickModel = useSimulationStore.getState().quickDialogueModel;
           dialogueLog = await sendLlmRequestWithSlot({
             messages: dialogueMessages,
             agent: "default",
             slot: mixedSlot,
-            model: store.getNextModel("default"),
+            model: quickModel || store.getNextModel("default"),
+            apiKey: store.getEffectiveApiKey("default"),
+            onChunk: (chunk) => setStreamingText((prev) => prev + chunk),
+            signal: abortController.signal,
+          });
+        } else if (quickModel) {
+          // Quick model set but no mixer overrides — still need slot-based call for model override
+          const baseSlot = store.slots["default"];
+          dialogueLog = await sendLlmRequestWithSlot({
+            messages: dialogueMessages,
+            agent: "default",
+            slot: baseSlot,
+            model: quickModel,
             apiKey: store.getEffectiveApiKey("default"),
             onChunk: (chunk) => setStreamingText((prev) => prev + chunk),
             signal: abortController.signal,

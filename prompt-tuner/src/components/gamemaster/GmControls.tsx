@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { InferenceMixer } from "@/components/chat/InferenceMixer";
 import { MultichatSelector } from "@/components/chat/MultichatSelector";
+import { QuickModelButton } from "@/components/chat/QuickModelButton";
 
 function NarrationToggle() {
   const isNarrationEnabled = useSimulationStore((s) => s.isNarrationEnabled);
@@ -95,6 +96,7 @@ export function GmControls() {
         </label>
         <NarrationToggle />
         <InferenceMixer />
+        <QuickModelButton />
         <MultichatSelector />
       </div>
     );
