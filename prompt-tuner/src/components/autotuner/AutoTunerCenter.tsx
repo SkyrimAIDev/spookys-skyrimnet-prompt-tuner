@@ -305,13 +305,26 @@ export function AutoTunerCenter() {
   const summaryRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
+  const programmaticScrollRef = useRef(false);
   const [showJumpButton, setShowJumpButton] = useState(false);
 
-  // Detect user scroll — if they scroll away from bottom, pause auto-scroll immediately via ref
+  // Helper: scroll to bottom programmatically without triggering user-scroll detection
+  const scrollToBottom = useCallback(() => {
+    const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
+    if (!viewport) return;
+    programmaticScrollRef.current = true;
+    viewport.scrollTop = viewport.scrollHeight;
+    // Reset the flag after the browser processes the scroll event
+    requestAnimationFrame(() => { programmaticScrollRef.current = false; });
+  }, []);
+
+  // Detect user scroll — ignore programmatic scrolls
   useEffect(() => {
     const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
     if (!viewport) return;
     const handleScroll = () => {
+      // Skip detection for scrolls we triggered ourselves
+      if (programmaticScrollRef.current) return;
       const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
       if (atBottom) {
         autoScrollRef.current = true;
@@ -331,38 +344,29 @@ export function AutoTunerCenter() {
   }, [isRunning]);
 
   const jumpToLatest = useCallback(() => {
-    const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
-    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+    scrollToBottom();
     autoScrollRef.current = true;
     setShowJumpButton(false);
-  }, []);
+  }, [scrollToBottom]);
 
   // Auto-scroll to bottom during streaming (only if ref says enabled)
   useEffect(() => {
-    if (autoScrollRef.current && isRunning && scrollRef.current) {
-      const viewport = scrollRef.current.closest("[data-radix-scroll-area-viewport]");
-      if (viewport) viewport.scrollTop = viewport.scrollHeight;
-    }
-  }, [explanationStream, assessmentStream, proposalStream, isRunning, rounds, statusMessage]);
+    if (autoScrollRef.current && isRunning) scrollToBottom();
+  }, [explanationStream, assessmentStream, proposalStream, isRunning, rounds, statusMessage, scrollToBottom]);
 
   // Auto-scroll to summary when it appears
   useEffect(() => {
     if (autoScrollRef.current && (sessionSummary || summaryStream) && summaryRef.current) {
+      programmaticScrollRef.current = true;
       summaryRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+      requestAnimationFrame(() => { programmaticScrollRef.current = false; });
     }
   }, [sessionSummary, summaryStream ? "streaming" : ""]);
 
   // Auto-scroll to bottom on new chat messages or streaming
   useEffect(() => {
-    if (autoScrollRef.current && (postTuningMessages.length > 0 || postTuningStream) && scrollRef.current) {
-      requestAnimationFrame(() => {
-        const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
-        if (viewport) {
-          viewport.scrollTop = viewport.scrollHeight;
-        }
-      });
-    }
-  }, [postTuningMessages, postTuningStream]);
+    if (autoScrollRef.current && (postTuningMessages.length > 0 || postTuningStream)) scrollToBottom();
+  }, [postTuningMessages, postTuningStream, scrollToBottom]);
 
   if (phase === "idle" && rounds.length === 0) {
     return (
