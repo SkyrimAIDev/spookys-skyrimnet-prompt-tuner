@@ -585,6 +585,7 @@ export function PreviewChat() {
               speaker={streamingSpeaker}
               streaming={multichatStreaming}
               profileIds={validMultichatIds}
+              quickModelNames={activeQuickModels}
               profiles={profiles}
             />
           )}
@@ -791,14 +792,19 @@ function MultichatStreamingBubble({
   speaker,
   streaming,
   profileIds,
+  quickModelNames = [],
   profiles,
 }: {
   speaker: string;
   streaming: Record<string, string>;
   profileIds: string[];
+  quickModelNames?: string[];
   profiles: { id: string; name: string; slots: Record<string, { api: { modelNames: string } }> }[];
 }) {
-  const count = profileIds.length;
+  // Build combined list: profile entries + quick model entries
+  const quickModelIds = quickModelNames.map((m) => `quick-${m.replace(/[^a-zA-Z0-9]/g, "-")}`);
+  const allIds = [...profileIds, ...quickModelIds];
+  const count = allIds.length;
 
   return (
     <div className="space-y-1">
@@ -813,10 +819,12 @@ function MultichatStreamingBubble({
           className="flex gap-1.5"
           style={{ width: count > 2 ? `${count * 288}px` : undefined }}
         >
-          {profileIds.map((profileId) => {
+          {allIds.map((profileId) => {
             const profile = profiles.find((p) => p.id === profileId);
             const text = streaming[profileId] || "";
-            const model = profile?.slots?.default?.api?.modelNames?.split(",")[0]?.trim() || "unknown";
+            const isQuickModel = profileId.startsWith("quick-");
+            const quickModelName = isQuickModel ? quickModelNames[quickModelIds.indexOf(profileId)] : null;
+            const model = quickModelName || profile?.slots?.default?.api?.modelNames?.split(",")[0]?.trim() || "unknown";
 
             return (
               <div
@@ -826,7 +834,7 @@ function MultichatStreamingBubble({
                 {/* Column header */}
                 <div className="px-2 py-1 border-b bg-muted/30 flex items-center gap-1.5">
                   <span className="text-[10px] font-semibold truncate">
-                    {profile?.name || profileId}
+                    {profile?.name || quickModelName || profileId}
                   </span>
                   <Badge variant="outline" className="text-[8px] px-1 py-0 font-mono shrink-0">
                     {model}
