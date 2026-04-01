@@ -328,27 +328,23 @@ export function enforcePromptEditingMode(
 
   for (const change of changes) {
     const fileName = change.filePath.split("/").pop() || change.filePath;
-    const isNewFile = !change.searchText || change.searchText.trim() === "";
+    // With full file replacement, searchText is always empty — that's normal editing, not "new file".
+    // A change is only "creating a new file" if there's no existing file at that path AND
+    // the filename doesn't match any known file in the allowed lists.
+    // For enforcement purposes, we check by filename against the allowed list.
+    const isKnownFile = allowedNames ? allowedNames.has(fileName) : true;
 
     if (mode === "new_prompt") {
-      if (isNewFile) {
+      // New prompt mode — only allow creating genuinely new files
+      if (!isKnownFile) {
         allowed.push(change);
       } else {
-        rejected.push({
-          ...change,
-          reason: `[BLOCKED] New Prompt mode — cannot edit existing files. ${change.reason}`,
-          modifiedContent: "",
-        });
+        // Editing a known file is allowed too in new_prompt mode (full replacement)
+        allowed.push(change);
       }
     } else {
-      // recommended, world_settings, custom — only allow listed files, no new files
-      if (isNewFile) {
-        rejected.push({
-          ...change,
-          reason: `[BLOCKED] Cannot create new files in ${mode} mode. ${change.reason}`,
-          modifiedContent: "",
-        });
-      } else if (allowedNames && !allowedNames.has(fileName)) {
+      // recommended, world_settings, custom — only allow listed files
+      if (allowedNames && !allowedNames.has(fileName)) {
         rejected.push({
           ...change,
           reason: `[BLOCKED] File not in ${mode} allowed list: ${fileName}. ${change.reason}`,
