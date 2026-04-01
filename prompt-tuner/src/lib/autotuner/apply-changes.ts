@@ -256,6 +256,15 @@ function findSearchMatch(
   const searchLines = searchText.split("\n").map((l) => l.trim()).filter(Boolean);
   if (searchLines.length >= 1) {
     const contentLines = content.split("\n");
+
+    // Pre-compute the character offset where each line starts in the original content
+    const lineOffsets: number[] = [];
+    let offset = 0;
+    for (let i = 0; i < contentLines.length; i++) {
+      lineOffsets.push(offset);
+      offset += contentLines[i].length + 1; // +1 for the \n
+    }
+
     // Find the first search line that's distinctive enough (>15 chars, not just punctuation/template)
     const anchorLine = searchLines.find((l) => l.length > 15 && !/^[{%#\s}]+$/.test(l))
       || searchLines[0];
@@ -264,12 +273,13 @@ function findSearchMatch(
     for (let ci = 0; ci < contentLines.length; ci++) {
       const contentLineNorm = normalizeQuotes(contentLines[ci].trim().toLowerCase());
       if (contentLineNorm.includes(anchorNorm) || anchorNorm.includes(contentLineNorm)) {
-        // Found anchor — calculate the block range in the original content
-        const blockStart = content.indexOf(contentLines[ci]);
-        if (blockStart === -1) continue;
-        // Take as many lines as the search text had
+        // Found anchor — use pre-computed line offsets for correct positioning
+        const blockStart = lineOffsets[ci];
         const blockEndLine = Math.min(ci + searchLines.length, contentLines.length);
-        const blockEnd = contentLines.slice(0, blockEndLine).join("\n").length;
+        // Block end is the start of the line AFTER the block, minus the trailing newline
+        const blockEnd = blockEndLine < contentLines.length
+          ? lineOffsets[blockEndLine] - 1
+          : content.length;
         const blockLength = blockEnd - blockStart;
         if (blockLength > 0) {
           return { index: blockStart, length: blockLength };
@@ -285,29 +295,26 @@ function findSearchMatch(
   if (collapsedSearch.length > 20) {
     const collapsedIdx = collapsedContent.toLowerCase().indexOf(collapsedSearch.toLowerCase());
     if (collapsedIdx !== -1) {
-      // Map back to the original content position.
-      // Find the nth non-whitespace character position in original.
-      let origStart = 0;
-      let collapsed = 0;
-      while (collapsed < collapsedIdx && origStart < content.length) {
-        if (/\s/.test(content[origStart]) && /\s/.test(content[origStart - 1] || "")) {
-          origStart++;
+      // Build a mapping from collapsed positions to original positions.
+      // Walk through original content: each character maps to a collapsed position.
+      // Consecutive whitespace chars after the first one don't increment the collapsed index.
+      const collapsedToOrig: number[] = []; // collapsedToOrig[i] = original index for collapsed position i
+      let inWhitespaceRun = false;
+      for (let oi = 0; oi < content.length; oi++) {
+        const isWs = /\s/.test(content[oi]);
+        if (isWs && inWhitespaceRun) {
+          // Skip consecutive whitespace — doesn't map to any collapsed position
           continue;
         }
-        origStart++;
-        collapsed++;
+        collapsedToOrig.push(oi);
+        inWhitespaceRun = isWs;
       }
-      // Find the end similarly
-      let origEnd = origStart;
-      let matchLen = 0;
-      while (matchLen < collapsedSearch.length && origEnd < content.length) {
-        if (/\s/.test(content[origEnd]) && /\s/.test(content[origEnd - 1] || "")) {
-          origEnd++;
-          continue;
-        }
-        origEnd++;
-        matchLen++;
-      }
+
+      const origStart = collapsedToOrig[collapsedIdx] ?? 0;
+      const endCollapsedIdx = collapsedIdx + collapsedSearch.length;
+      const origEnd = endCollapsedIdx < collapsedToOrig.length
+        ? collapsedToOrig[endCollapsedIdx]
+        : content.length;
       return { index: origStart, length: origEnd - origStart };
     }
   }

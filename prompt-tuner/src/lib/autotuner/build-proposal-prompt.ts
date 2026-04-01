@@ -354,9 +354,26 @@ ${previousRounds.map((r, idx) => {
   const isDetailed = previousRounds.length <= 5 || idx < 2 || idx >= previousRounds.length - 2;
 
   if (!isDetailed) {
-    const sc = r.proposal?.settingsChanges?.length || 0;
-    const pc = r.proposal?.promptChanges?.length || 0;
-    return `### Round ${r.roundNumber} (summary)\n- ${sc} settings, ${pc} prompt changes | ${r.proposal?.reasoning?.substring(0, 100) || "N/A"}`;
+    const sc = r.proposal?.settingsChanges || [];
+    const pc = r.proposal?.promptChanges || [];
+    const settingsStr = sc.length > 0
+      ? sc.map((c) => `${c.parameter}: ${JSON.stringify(c.oldValue)}→${JSON.stringify(c.newValue)}`).join(", ")
+      : "none";
+    const promptStr = pc.length > 0
+      ? pc.map((c) => c.filePath.split("/").pop()).join(", ")
+      : "none";
+    // Extract a brief verdict from assessment
+    const assessLower = (r.assessmentText || "").toLowerCase();
+    const verdict = assessLower.includes("improv") ? "improving"
+      : assessLower.includes("regress") || assessLower.includes("worse") ? "regressing"
+      : assessLower.includes("mixed") ? "mixed"
+      : assessLower.includes("no change") || assessLower.includes("similar") ? "no change"
+      : "assessed";
+    return `### Round ${r.roundNumber} (condensed)
+- Settings: ${settingsStr}
+- Prompts: ${promptStr}
+- Verdict: ${verdict}
+- Reasoning: ${r.proposal?.reasoning?.substring(0, 200) || "N/A"}`;
   }
 
   const resp = r.benchmarkResult?.response || "";
