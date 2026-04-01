@@ -304,21 +304,20 @@ export function AutoTunerCenter() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
-  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  const autoScrollRef = useRef(true);
   const [showJumpButton, setShowJumpButton] = useState(false);
 
-  // Detect user scroll — if they scroll away from bottom, pause auto-scroll
+  // Detect user scroll — if they scroll away from bottom, pause auto-scroll immediately via ref
   useEffect(() => {
     const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
     if (!viewport) return;
     const handleScroll = () => {
       const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
       if (atBottom) {
-        setAutoScrollEnabled(true);
+        autoScrollRef.current = true;
         setShowJumpButton(false);
       } else if (isRunning) {
-        // Only show jump button and pause if actually running
-        setAutoScrollEnabled(false);
+        autoScrollRef.current = false;
         setShowJumpButton(true);
       }
     };
@@ -328,34 +327,34 @@ export function AutoTunerCenter() {
 
   // Reset auto-scroll when a new run starts
   useEffect(() => {
-    if (isRunning) { setAutoScrollEnabled(true); setShowJumpButton(false); }
+    if (isRunning) { autoScrollRef.current = true; setShowJumpButton(false); }
   }, [isRunning]);
 
   const jumpToLatest = useCallback(() => {
     const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
     if (viewport) viewport.scrollTop = viewport.scrollHeight;
-    setAutoScrollEnabled(true);
+    autoScrollRef.current = true;
     setShowJumpButton(false);
   }, []);
 
-  // Auto-scroll to bottom during streaming (only if enabled)
+  // Auto-scroll to bottom during streaming (only if ref says enabled)
   useEffect(() => {
-    if (autoScrollEnabled && isRunning && scrollRef.current) {
+    if (autoScrollRef.current && isRunning && scrollRef.current) {
       const viewport = scrollRef.current.closest("[data-radix-scroll-area-viewport]");
       if (viewport) viewport.scrollTop = viewport.scrollHeight;
     }
-  }, [explanationStream, assessmentStream, proposalStream, isRunning, rounds, statusMessage, autoScrollEnabled]);
+  }, [explanationStream, assessmentStream, proposalStream, isRunning, rounds, statusMessage]);
 
   // Auto-scroll to summary when it appears
   useEffect(() => {
-    if (autoScrollEnabled && (sessionSummary || summaryStream) && summaryRef.current) {
+    if (autoScrollRef.current && (sessionSummary || summaryStream) && summaryRef.current) {
       summaryRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [sessionSummary, summaryStream ? "streaming" : "", autoScrollEnabled]);
+  }, [sessionSummary, summaryStream ? "streaming" : ""]);
 
   // Auto-scroll to bottom on new chat messages or streaming
   useEffect(() => {
-    if (autoScrollEnabled && (postTuningMessages.length > 0 || postTuningStream) && scrollRef.current) {
+    if (autoScrollRef.current && (postTuningMessages.length > 0 || postTuningStream) && scrollRef.current) {
       requestAnimationFrame(() => {
         const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
         if (viewport) {
@@ -363,7 +362,7 @@ export function AutoTunerCenter() {
         }
       });
     }
-  }, [postTuningMessages, postTuningStream, autoScrollEnabled]);
+  }, [postTuningMessages, postTuningStream]);
 
   if (phase === "idle" && rounds.length === 0) {
     return (

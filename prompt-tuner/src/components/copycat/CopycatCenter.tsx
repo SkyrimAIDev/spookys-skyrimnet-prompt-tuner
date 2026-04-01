@@ -305,20 +305,20 @@ export function CopycatCenter() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
-  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  const autoScrollRef = useRef(true);
   const [showJumpButton, setShowJumpButton] = useState(false);
 
-  // Detect user scroll — pause auto-scroll when they scroll away
+  // Detect user scroll — pause auto-scroll immediately via ref
   useEffect(() => {
     const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
     if (!viewport) return;
     const handleScroll = () => {
       const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
       if (atBottom) {
-        setAutoScrollEnabled(true);
+        autoScrollRef.current = true;
         setShowJumpButton(false);
       } else if (isRunning) {
-        setAutoScrollEnabled(false);
+        autoScrollRef.current = false;
         setShowJumpButton(true);
       }
     };
@@ -327,37 +327,37 @@ export function CopycatCenter() {
   }, [isRunning]);
 
   useEffect(() => {
-    if (isRunning) { setAutoScrollEnabled(true); setShowJumpButton(false); }
+    if (isRunning) { autoScrollRef.current = true; setShowJumpButton(false); }
   }, [isRunning]);
 
   const jumpToLatest = useCallback(() => {
     const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
     if (viewport) viewport.scrollTop = viewport.scrollHeight;
-    setAutoScrollEnabled(true);
+    autoScrollRef.current = true;
     setShowJumpButton(false);
   }, []);
 
   useEffect(() => {
-    if (autoScrollEnabled && isRunning && scrollRef.current) {
+    if (autoScrollRef.current && isRunning && scrollRef.current) {
       const viewport = scrollRef.current.closest("[data-radix-scroll-area-viewport]");
       if (viewport) viewport.scrollTop = viewport.scrollHeight;
     }
-  }, [comparisonStream, proposalStream, isRunning, rounds, statusMessage, autoScrollEnabled]);
+  }, [comparisonStream, proposalStream, isRunning, rounds, statusMessage]);
 
   useEffect(() => {
-    if (autoScrollEnabled && (sessionSummary || summaryStream) && summaryRef.current) {
+    if (autoScrollRef.current && (sessionSummary || summaryStream) && summaryRef.current) {
       summaryRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [sessionSummary, summaryStream ? "streaming" : "", autoScrollEnabled]);
+  }, [sessionSummary, summaryStream ? "streaming" : ""]);
 
   useEffect(() => {
-    if (autoScrollEnabled && (postTuningMessages.length > 0 || postTuningStream) && scrollRef.current) {
+    if (autoScrollRef.current && (postTuningMessages.length > 0 || postTuningStream) && scrollRef.current) {
       requestAnimationFrame(() => {
         const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
         if (viewport) viewport.scrollTop = viewport.scrollHeight;
       });
     }
-  }, [postTuningMessages, postTuningStream, autoScrollEnabled]);
+  }, [postTuningMessages, postTuningStream]);
 
   if (phase === "idle" && rounds.length === 0) {
     return (
