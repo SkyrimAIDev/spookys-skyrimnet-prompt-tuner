@@ -509,7 +509,7 @@ export const useCopycatStore = create<CopycatState>((set, get) => ({
         STORAGE_KEY,
         JSON.stringify({
           referenceModelId, targetModelId, selectedScenarioId,
-          selectedPromptSet, tuningTarget, maxRounds, lockedSettings,
+          selectedPromptSet, tuningTarget, promptEditingMode, customPromptPaths, maxRounds, lockedSettings,
           customInstructions, startingSettings, referenceApiOverride, targetApiOverride,
         })
       );

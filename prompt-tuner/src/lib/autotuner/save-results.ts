@@ -106,21 +106,10 @@ export async function savePromptsToSet(targetSetName: string): Promise<void> {
  * Lists all files in the temp set and writes them to the target.
  */
 async function copyTempToExistingSet(targetSetName: string): Promise<void> {
-  // Use the server-side copy endpoint by calling the browse API for temp files
-  // Then write each one to the target location
-  const resp = await fetch(`/api/files/children?path=${encodeURIComponent(TUNER_TEMP_SET)}&limit=200`);
-  if (!resp.ok) {
-    throw new Error("Failed to list temp tuner files");
-  }
-
-  // For simplicity, we'll recursively copy by reading and writing each file.
-  // This is handled by the save-set API creating from source.
-  // If the set already exists, we'll delete it first and recreate.
-  await deleteTunerTempSet();
-
-  // Now we can copy normally — but the temp set was just deleted.
-  // This case shouldn't normally happen because we clean up temp sets before starting.
-  throw new Error(`Prompt set "${targetSetName}" already exists. Please choose a different name or delete it first.`);
+  // The target set already exists (409 from save-set API).
+  // Don't delete the temp set — the user's work is still there.
+  // They can retry with a different name or overwrite via the UI.
+  throw new Error(`Prompt set "${targetSetName}" already exists. Please choose a different name or use "Overwrite existing set".`);
 }
 
 /**

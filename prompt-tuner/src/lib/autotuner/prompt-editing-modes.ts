@@ -317,6 +317,8 @@ export function enforcePromptEditingMode(
   } else if (mode === "custom") {
     if (customPaths && customPaths.length > 0) {
       allowedNames = new Set(customPaths.map((p) => p.split("/").pop()!));
+    } else {
+      allowedNames = new Set(); // No paths selected — block all changes
     }
     allowNewFiles = false;
   } else if (mode === "new_prompt") {
