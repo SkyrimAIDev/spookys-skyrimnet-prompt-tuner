@@ -304,66 +304,57 @@ export function AutoTunerCenter() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
-  const autoScrollRef = useRef(true);
-  const programmaticScrollUntil = useRef(0);
   const [showJumpButton, setShowJumpButton] = useState(false);
 
-  // Helper: scroll to bottom programmatically without triggering user-scroll detection
+  // Simple approach: check if viewport is near bottom BEFORE scrolling.
+  // No scroll event listeners — no feedback loops.
+  const getViewport = useCallback(() => scrollRef.current?.closest("[data-radix-scroll-area-viewport]") as HTMLElement | null, []);
+
+  const isNearBottom = useCallback(() => {
+    const viewport = getViewport();
+    if (!viewport) return true;
+    return viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 100;
+  }, [getViewport]);
+
   const scrollToBottom = useCallback(() => {
-    const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
-    if (!viewport) return;
-    // Suppress user-scroll detection for 150ms after programmatic scroll
-    programmaticScrollUntil.current = Date.now() + 150;
-    viewport.scrollTop = viewport.scrollHeight;
-  }, []);
-
-  // Detect user scroll — ignore recent programmatic scrolls
-  useEffect(() => {
-    const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
-    if (!viewport) return;
-    const handleScroll = () => {
-      if (Date.now() < programmaticScrollUntil.current) return;
-      const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
-      if (atBottom) {
-        autoScrollRef.current = true;
-        setShowJumpButton(false);
-      } else if (isRunning) {
-        autoScrollRef.current = false;
-        setShowJumpButton(true);
-      }
-    };
-    viewport.addEventListener("scroll", handleScroll);
-    return () => viewport.removeEventListener("scroll", handleScroll);
-  }, [isRunning]);
-
-  // Reset auto-scroll when a new run starts
-  useEffect(() => {
-    if (isRunning) { autoScrollRef.current = true; setShowJumpButton(false); }
-  }, [isRunning]);
+    const viewport = getViewport();
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+  }, [getViewport]);
 
   const jumpToLatest = useCallback(() => {
     scrollToBottom();
-    autoScrollRef.current = true;
     setShowJumpButton(false);
   }, [scrollToBottom]);
 
-  // Auto-scroll to bottom during streaming (only if ref says enabled)
+  // Auto-scroll during streaming — only if already near bottom
   useEffect(() => {
-    if (autoScrollRef.current && isRunning) scrollToBottom();
-  }, [explanationStream, assessmentStream, proposalStream, isRunning, rounds, statusMessage, scrollToBottom]);
+    if (!isRunning) return;
+    if (isNearBottom()) {
+      scrollToBottom();
+      setShowJumpButton(false);
+    } else {
+      setShowJumpButton(true);
+    }
+  }, [explanationStream, assessmentStream, proposalStream, isRunning, rounds, statusMessage, isNearBottom, scrollToBottom]);
 
   // Auto-scroll to summary when it appears
   useEffect(() => {
-    if (autoScrollRef.current && (sessionSummary || summaryStream) && summaryRef.current) {
-      programmaticScrollUntil.current = Date.now() + 150;
+    if ((sessionSummary || summaryStream) && summaryRef.current && isNearBottom()) {
       summaryRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [sessionSummary, summaryStream ? "streaming" : ""]);
+  }, [sessionSummary, summaryStream ? "streaming" : "", isNearBottom]);
 
-  // Auto-scroll to bottom on new chat messages or streaming
+  // Auto-scroll on new chat messages
   useEffect(() => {
-    if (autoScrollRef.current && (postTuningMessages.length > 0 || postTuningStream)) scrollToBottom();
-  }, [postTuningMessages, postTuningStream, scrollToBottom]);
+    if ((postTuningMessages.length > 0 || postTuningStream) && isNearBottom()) {
+      requestAnimationFrame(scrollToBottom);
+    }
+  }, [postTuningMessages, postTuningStream, isNearBottom, scrollToBottom]);
+
+  // Reset jump button when run starts
+  useEffect(() => {
+    if (isRunning) setShowJumpButton(false);
+  }, [isRunning]);
 
   if (phase === "idle" && rounds.length === 0) {
     return (

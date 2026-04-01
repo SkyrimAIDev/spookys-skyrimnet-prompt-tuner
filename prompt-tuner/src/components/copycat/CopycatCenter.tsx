@@ -305,59 +305,51 @@ export function CopycatCenter() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
-  const autoScrollRef = useRef(true);
-  const programmaticScrollUntil = useRef(0);
   const [showJumpButton, setShowJumpButton] = useState(false);
 
+  const getViewport = useCallback(() => scrollRef.current?.closest("[data-radix-scroll-area-viewport]") as HTMLElement | null, []);
+
+  const isNearBottom = useCallback(() => {
+    const viewport = getViewport();
+    if (!viewport) return true;
+    return viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 100;
+  }, [getViewport]);
+
   const scrollToBottom = useCallback(() => {
-    const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
-    if (!viewport) return;
-    programmaticScrollUntil.current = Date.now() + 150;
-    viewport.scrollTop = viewport.scrollHeight;
-  }, []);
-
-  useEffect(() => {
-    const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
-    if (!viewport) return;
-    const handleScroll = () => {
-      if (Date.now() < programmaticScrollUntil.current) return;
-      const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
-      if (atBottom) {
-        autoScrollRef.current = true;
-        setShowJumpButton(false);
-      } else if (isRunning) {
-        autoScrollRef.current = false;
-        setShowJumpButton(true);
-      }
-    };
-    viewport.addEventListener("scroll", handleScroll);
-    return () => viewport.removeEventListener("scroll", handleScroll);
-  }, [isRunning]);
-
-  useEffect(() => {
-    if (isRunning) { autoScrollRef.current = true; setShowJumpButton(false); }
-  }, [isRunning]);
+    const viewport = getViewport();
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+  }, [getViewport]);
 
   const jumpToLatest = useCallback(() => {
     scrollToBottom();
-    autoScrollRef.current = true;
     setShowJumpButton(false);
   }, [scrollToBottom]);
 
   useEffect(() => {
-    if (autoScrollRef.current && isRunning) scrollToBottom();
-  }, [comparisonStream, proposalStream, isRunning, rounds, statusMessage, scrollToBottom]);
+    if (!isRunning) return;
+    if (isNearBottom()) {
+      scrollToBottom();
+      setShowJumpButton(false);
+    } else {
+      setShowJumpButton(true);
+    }
+  }, [comparisonStream, proposalStream, isRunning, rounds, statusMessage, isNearBottom, scrollToBottom]);
 
   useEffect(() => {
-    if (autoScrollRef.current && (sessionSummary || summaryStream) && summaryRef.current) {
-      programmaticScrollUntil.current = Date.now() + 150;
+    if ((sessionSummary || summaryStream) && summaryRef.current && isNearBottom()) {
       summaryRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [sessionSummary, summaryStream ? "streaming" : ""]);
+  }, [sessionSummary, summaryStream ? "streaming" : "", isNearBottom]);
 
   useEffect(() => {
-    if (autoScrollRef.current && (postTuningMessages.length > 0 || postTuningStream)) scrollToBottom();
-  }, [postTuningMessages, postTuningStream, scrollToBottom]);
+    if ((postTuningMessages.length > 0 || postTuningStream) && isNearBottom()) {
+      requestAnimationFrame(scrollToBottom);
+    }
+  }, [postTuningMessages, postTuningStream, isNearBottom, scrollToBottom]);
+
+  useEffect(() => {
+    if (isRunning) setShowJumpButton(false);
+  }, [isRunning]);
 
   if (phase === "idle" && rounds.length === 0) {
     return (
