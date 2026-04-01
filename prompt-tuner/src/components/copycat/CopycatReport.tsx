@@ -13,7 +13,7 @@ import { buildCopycatReport } from "@/lib/copycat/export-copycat-report";
 import { PromptSaveSection } from "@/components/shared/PromptSaveSection";
 import { SaveModeOption } from "@/components/shared/SaveModeOption";
 import type { AiTuningSettings } from "@/types/config";
-import type { CopycatPhase } from "@/types/copycat";
+
 import {
   CheckCircle2,
   AlertCircle,
@@ -24,18 +24,7 @@ import {
   Download,
 } from "lucide-react";
 
-const PHASE_LABELS: Record<CopycatPhase, string> = {
-  idle: "Idle",
-  running_reference: "Running Reference",
-  running_target: "Running Target",
-  comparing: "Comparing",
-  proposing: "Proposing",
-  verifying: "Verifying",
-  applying: "Applying",
-  complete: "Complete",
-  error: "Error",
-  stopped: "Stopped",
-};
+import { COPYCAT_PHASE_LABELS as PHASE_LABELS } from "@/lib/constants/phase-labels";
 
 export function CopycatReport() {
   const phase = useCopycatStore((s) => s.phase);

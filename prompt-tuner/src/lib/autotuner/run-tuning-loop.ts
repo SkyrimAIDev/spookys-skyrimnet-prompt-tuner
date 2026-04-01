@@ -477,7 +477,7 @@ export async function runTuningLoop(
         // Fetch prompt file contents for the tuner LLM to analyze
         // Falls back to the source (active) set for files not yet in the temp set
         const promptSetPath = workingPromptSet || "";
-        const fetched = await fetchPromptContent(category, promptSetPath, sourceSetName || "", activeScenario.npcs, promptEditingMode, customPromptPaths);
+        const fetched = await fetchPromptContent(category, promptSetPath, sourceSetName || "", activeScenario.npcs);
         promptContent = fetched.content;
       }
 

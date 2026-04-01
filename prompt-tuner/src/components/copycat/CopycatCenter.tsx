@@ -36,18 +36,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 
-const PHASE_LABELS: Record<CopycatPhase, string> = {
-  idle: "Waiting",
-  running_reference: "Running Reference",
-  running_target: "Running Target",
-  comparing: "Comparing Styles",
-  proposing: "Proposing Changes",
-  verifying: "Verifying",
-  applying: "Applying Changes",
-  complete: "Complete",
-  error: "Error",
-  stopped: "Stopped",
-};
+import { COPYCAT_PHASE_LABELS as PHASE_LABELS } from "@/lib/constants/phase-labels";
 
 function PhaseIcon({ phase }: { phase: CopycatPhase }) {
   switch (phase) {

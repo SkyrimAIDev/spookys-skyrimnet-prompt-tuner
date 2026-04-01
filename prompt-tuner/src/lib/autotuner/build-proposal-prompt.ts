@@ -349,26 +349,31 @@ No prompt files could be loaded for this prompt set. You cannot propose prompt c
 **IMPORTANT:** Review this history carefully. Do NOT propose setting values that were already tested in a previous round and produced poor results. Each round must try something genuinely new.
 
 ${triedSettingsLedger ? `### Settings Already Tried\n${triedSettingsLedger}\n` : ""}
-${previousRounds.map((r) => {
+${previousRounds.map((r, idx) => {
+  // For deep sessions (>5 rounds), summarize middle rounds to save context
+  const isDetailed = previousRounds.length <= 5 || idx < 2 || idx >= previousRounds.length - 2;
+
+  if (!isDetailed) {
+    const sc = r.proposal?.settingsChanges?.length || 0;
+    const pc = r.proposal?.promptChanges?.length || 0;
+    return `### Round ${r.roundNumber} (summary)\n- ${sc} settings, ${pc} prompt changes | ${r.proposal?.reasoning?.substring(0, 100) || "N/A"}`;
+  }
+
   const resp = r.benchmarkResult?.response || "";
   const settingsChanges = r.proposal?.settingsChanges?.length
     ? `Settings changes: ${r.proposal.settingsChanges.map((c) => `${c.parameter}: ${JSON.stringify(c.oldValue)} → ${JSON.stringify(c.newValue)}`).join(", ")}`
     : "No settings changes";
   const promptChanges = r.proposal?.promptChanges?.length
-    ? `Prompt changes:\n${r.proposal.promptChanges.map((c) => {
-        const skipped = c.reason?.startsWith("[SKIPPED]") ? " **(SKIPPED — not applied)**" : "";
+    ? `Prompt changes: ${r.proposal.promptChanges.map((c) => {
         const fileName = c.filePath.split("/").pop() || c.filePath;
-        // Show the actual edits so the tuner knows what was changed
-        const searchSnippet = c.searchText ? c.searchText.substring(0, 150) : "(new file)";
-        const replaceSnippet = c.replaceText ? c.replaceText.substring(0, 150) : "(deleted)";
-        return `  • \`${fileName}\`: ${c.reason}${skipped}\n    Search: "${searchSnippet}${(c.searchText?.length || 0) > 150 ? "..." : ""}"\n    Replace: "${replaceSnippet}${(c.replaceText?.length || 0) > 150 ? "..." : ""}"`;
-      }).join("\n")}`
+        return `\`${fileName}\`: ${c.reason}`;
+      }).join("; ")}`
     : "No prompt changes";
   const assessmentSummary = r.assessmentText
-    ? `Assessment:\n${r.assessmentText.substring(0, 1200)}${r.assessmentText.length > 1200 ? "..." : ""}`
+    ? `Assessment:\n${r.assessmentText.substring(0, 800)}${r.assessmentText.length > 800 ? "..." : ""}`
     : "Assessment: N/A";
   return `### Round ${r.roundNumber}
-- Response: ${resp.substring(0, 600)}${resp.length > 600 ? "..." : ""}
+- Response: ${resp.substring(0, 400)}${resp.length > 400 ? "..." : ""}
 - Latency: ${r.benchmarkResult?.latencyMs || 0}ms | Tokens: ${r.benchmarkResult?.totalTokens || 0}
 - ${settingsChanges}
 - ${promptChanges}

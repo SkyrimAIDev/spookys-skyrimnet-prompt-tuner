@@ -73,17 +73,7 @@ function getMessageLabel(
   return { label: String(message.role).toUpperCase(), colorClass: "text-muted-foreground" };
 }
 
-const PHASE_LABELS: Record<TunerPhase, string> = {
-  idle: "Waiting",
-  benchmarking: "Running Benchmark",
-  explaining: "Self-Explanation",
-  assessing: "Assessing Quality",
-  proposing: "Proposing Changes",
-  applying: "Applying Changes",
-  complete: "Complete",
-  error: "Error",
-  stopped: "Stopped",
-};
+import { TUNER_PHASE_LABELS as PHASE_LABELS } from "@/lib/constants/phase-labels";
 
 function PhaseIcon({ phase }: { phase: TunerPhase }) {
   switch (phase) {

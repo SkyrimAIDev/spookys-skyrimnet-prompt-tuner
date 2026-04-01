@@ -13,7 +13,7 @@ import { buildTuningReport } from "@/lib/autotuner/export-tuning-report";
 import { PromptSaveSection } from "@/components/shared/PromptSaveSection";
 import { SaveModeOption } from "@/components/shared/SaveModeOption";
 import type { AiTuningSettings } from "@/types/config";
-import type { TunerPhase } from "@/types/autotuner";
+
 import {
   CheckCircle2,
   AlertCircle,
@@ -24,17 +24,7 @@ import {
   Download,
 } from "lucide-react";
 
-const PHASE_LABELS: Record<TunerPhase, string> = {
-  idle: "Idle",
-  benchmarking: "Benchmarking",
-  explaining: "Explaining",
-  assessing: "Assessing",
-  proposing: "Proposing",
-  applying: "Applying",
-  complete: "Complete",
-  error: "Error",
-  stopped: "Stopped",
-};
+import { TUNER_PHASE_LABELS as PHASE_LABELS } from "@/lib/constants/phase-labels";
 
 export function AutoTunerReport() {
   const phase = useAutoTunerStore((s) => s.phase);

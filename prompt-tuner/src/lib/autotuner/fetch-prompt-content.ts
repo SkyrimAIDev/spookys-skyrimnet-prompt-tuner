@@ -127,6 +127,13 @@ export const AGENT_PROMPT_PATHS: Record<string, string[]> = {
   ],
 };
 
+// ── Content limits ──────────────────────────────────────────────────
+const MAX_TOTAL_CONTENT_LENGTH = 30000;
+const PRIMARY_NPC_BIO_LIMIT = 8000;
+const SECONDARY_NPC_BIO_LIMIT = 2000;
+const EDITABLE_FILE_LIMIT = 4000;
+const READ_ONLY_FILE_LIMIT = 800;
+
 interface FileEntry {
   name: string;
   path: string;
@@ -196,8 +203,6 @@ export async function fetchPromptContent(
   promptSetName: string,
   fallbackSetName?: string,
   scenarioNpcs?: BenchmarkNpc[],
-  _promptEditingMode?: import("@/types/autotuner").PromptEditingMode,
-  _customPromptPaths?: string[],
 ): Promise<{ content: string; files: { path: string; name: string; content: string }[] }> {
   const catDef = getCategoryDef(category);
   if (!catDef) return { content: "", files: [] };
@@ -235,7 +240,7 @@ export async function fetchPromptContent(
 
   const allFiles: { path: string; name: string; content: string }[] = [];
   let totalLength = 0;
-  const MAX_TOTAL = 30000;
+  const MAX_TOTAL = MAX_TOTAL_CONTENT_LENGTH;
 
   for (const entry of paths) {
     if (totalLength > MAX_TOTAL) break;
@@ -330,7 +335,7 @@ export async function fetchPromptContent(
       if (bioContent) {
         // Primary NPC (first in list) gets a much higher limit so the tuner
         // can see the full personality, speech_style, etc. Nearby NPCs are shorter.
-        const bioMaxLen = npcIdx === 0 ? 8000 : 2000;
+        const bioMaxLen = npcIdx === 0 ? PRIMARY_NPC_BIO_LIMIT : SECONDARY_NPC_BIO_LIMIT;
         const truncated = bioContent.length > bioMaxLen
           ? bioContent.substring(0, bioMaxLen) + "\n... (truncated)"
           : bioContent;
@@ -347,7 +352,7 @@ export async function fetchPromptContent(
     const editability = getEditability(f.name);
     const label = EDITABILITY_LABELS[editability];
     // Give more space to editable files, less to read-only context
-    const maxLen = editability === "DO_NOT_EDIT" ? 800 : 4000;
+    const maxLen = editability === "DO_NOT_EDIT" ? READ_ONLY_FILE_LIMIT : EDITABLE_FILE_LIMIT;
     const truncated = f.content.length > maxLen
       ? f.content.substring(0, maxLen) + "\n... (truncated)"
       : f.content;

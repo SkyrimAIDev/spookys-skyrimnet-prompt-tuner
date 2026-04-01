@@ -294,7 +294,7 @@ export async function runCopycatLoop(params: CopycatLoopParams) {
       let promptContent = "";
       if (tuningTarget === "prompts" || tuningTarget === "both") {
         // Falls back to the source (active) set for files not yet in the temp set
-        const fetched = await fetchPromptContent("dialogue", workingPromptSet || "", sourceSetName || "", activeScenario.npcs, promptEditingMode, customPromptPaths);
+        const fetched = await fetchPromptContent("dialogue", workingPromptSet || "", sourceSetName || "", activeScenario.npcs);
         promptContent = fetched.content;
       }
 
