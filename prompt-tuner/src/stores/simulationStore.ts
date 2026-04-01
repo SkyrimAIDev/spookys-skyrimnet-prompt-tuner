@@ -13,6 +13,7 @@ interface PersistedSceneState {
   selectedNpcs: NpcConfig[];
   playerConfig: PlayerConfig;
   scene: SceneConfig;
+  isNarrationEnabled?: boolean;
 }
 
 function loadPersistedActions(): ActionDefinition[] {
@@ -53,6 +54,7 @@ function syncScenePersistence(get: () => SimulationState) {
     selectedNpcs: state.selectedNpcs,
     playerConfig: state.playerConfig,
     scene: state.scene,
+    isNarrationEnabled: state.isNarrationEnabled,
   });
 }
 
@@ -237,7 +239,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   })(),
   autochatStartedAt: null,
   autochatStatus: "idle",
-  isNarrationEnabled: true,
+  isNarrationEnabled: true, // Hydrated from localStorage below
   quickDialogueModel: "",
   multichatEnabled: false,
   multichatProfileIds: [],
@@ -398,7 +400,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   clearScenePlan: () =>
     set({ scenePlan: null, gmActionLog: [], isPlanning: false, gmStatus: "idle" }),
 
-  setIsNarrationEnabled: (enabled) => set({ isNarrationEnabled: enabled }),
+  setIsNarrationEnabled: (enabled) => { set({ isNarrationEnabled: enabled }); syncScenePersistence(get); },
   setInferenceOverrides: (overrides) => set({ inferenceOverrides: overrides }),
   setAutochatEnabled: (enabled) => set({ autochatEnabled: enabled }),
   setAutochatDuration: (minutes) => {
@@ -442,11 +444,12 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
 // Hydrate persisted scene state on the client
 if (typeof window !== "undefined") {
   const persisted = loadPersistedScene();
-  if (persisted.selectedNpcs || persisted.playerConfig || persisted.scene) {
+  if (persisted.selectedNpcs || persisted.playerConfig || persisted.scene || persisted.isNarrationEnabled !== undefined) {
     useSimulationStore.setState({
       ...(persisted.selectedNpcs && { selectedNpcs: persisted.selectedNpcs }),
       ...(persisted.playerConfig && { playerConfig: persisted.playerConfig }),
       ...(persisted.scene && { scene: persisted.scene }),
+      ...(persisted.isNarrationEnabled !== undefined && { isNarrationEnabled: persisted.isNarrationEnabled }),
     });
   }
 }

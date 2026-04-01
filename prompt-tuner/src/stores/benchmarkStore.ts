@@ -18,8 +18,9 @@ function loadPersisted(): {
   selectedPromptSet: string;
   quickModels: string[];
   selectedQuickModels: string[];
+  isNarrationEnabled: boolean;
 } {
-  const defaults = { selectedProfileIds: [] as string[], customScenarios: [] as BenchmarkScenario[], activeScenarioIds: {} as Record<string, string>, selectedPromptSet: "__active__", quickModels: [] as string[], selectedQuickModels: [] as string[] };
+  const defaults = { selectedProfileIds: [] as string[], customScenarios: [] as BenchmarkScenario[], activeScenarioIds: {} as Record<string, string>, selectedPromptSet: "__active__", quickModels: [] as string[], selectedQuickModels: [] as string[], isNarrationEnabled: true };
   if (typeof window === "undefined") return defaults;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -32,6 +33,7 @@ function loadPersisted(): {
         selectedPromptSet: data.selectedPromptSet ?? "__active__",
         quickModels: data.quickModels ?? [],
         selectedQuickModels: data.selectedQuickModels ?? [],
+        isNarrationEnabled: data.isNarrationEnabled ?? true,
       };
     }
   } catch { /* ignore */ }
@@ -99,7 +101,7 @@ export const useBenchmarkStore = create<BenchmarkState>((set, get) => ({
   renderedMessages: null,
   renderedText: "",
   customScenarios: _persisted.customScenarios,
-  isNarrationEnabled: true,
+  isNarrationEnabled: _persisted.isNarrationEnabled,
   abortController: null,
 
   setActiveTurns: (turns) => set({ activeTurns: turns }),
@@ -262,7 +264,7 @@ export const useBenchmarkStore = create<BenchmarkState>((set, get) => ({
     get().persist();
   },
 
-  setIsNarrationEnabled: (enabled) => set({ isNarrationEnabled: enabled }),
+  setIsNarrationEnabled: (enabled) => { set({ isNarrationEnabled: enabled }); get().persist(); },
 
   addQuickModel: (model) => {
     const trimmed = model.trim();
@@ -294,11 +296,11 @@ export const useBenchmarkStore = create<BenchmarkState>((set, get) => ({
 
   persist: () => {
     if (typeof window === "undefined") return;
-    const { selectedProfileIds, customScenarios, activeScenarioIds, selectedPromptSet, quickModels, selectedQuickModels } = get();
+    const { selectedProfileIds, customScenarios, activeScenarioIds, selectedPromptSet, quickModels, selectedQuickModels, isNarrationEnabled } = get();
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ selectedProfileIds, customScenarios, activeScenarioIds, selectedPromptSet, quickModels, selectedQuickModels })
+        JSON.stringify({ selectedProfileIds, customScenarios, activeScenarioIds, selectedPromptSet, quickModels, selectedQuickModels, isNarrationEnabled })
       );
     } catch { /* ignore */ }
   },

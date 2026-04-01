@@ -178,7 +178,7 @@ export const useAutoTunerStore = create<AutoTunerState>((set, get) => ({
   lockedSettings: _persisted.lockedSettings,
   customInstructions: _persisted.customInstructions,
   ignoreFormatScoring: _persisted.ignoreFormatScoring,
-  isNarrationEnabled: true,
+  isNarrationEnabled: _persisted.isNarrationEnabled,
 
   // Run state
   isRunning: false,

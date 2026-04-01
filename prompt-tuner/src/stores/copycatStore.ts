@@ -49,6 +49,7 @@ function loadPersisted(): {
   startingSettings: AiTuningSettings;
   referenceApiOverride: ApiOverride;
   targetApiOverride: ApiOverride;
+  isNarrationEnabled: boolean;
 } {
   const defaults = {
     referenceModelId: "",
@@ -64,6 +65,7 @@ function loadPersisted(): {
     startingSettings: { ...COPYCAT_DEFAULT_SETTINGS },
     referenceApiOverride: { ...EMPTY_API_OVERRIDE },
     targetApiOverride: { ...EMPTY_API_OVERRIDE },
+    isNarrationEnabled: true,
   };
   if (typeof window === "undefined") return defaults;
   try {
@@ -86,6 +88,7 @@ function loadPersisted(): {
           : { ...COPYCAT_DEFAULT_SETTINGS },
         referenceApiOverride: data.referenceApiOverride ?? { ...EMPTY_API_OVERRIDE },
         targetApiOverride: data.targetApiOverride ?? { ...EMPTY_API_OVERRIDE },
+        isNarrationEnabled: data.isNarrationEnabled ?? true,
       };
     }
   } catch { /* ignore */ }
@@ -222,7 +225,7 @@ export const useCopycatStore = create<CopycatState>((set, get) => ({
   startingSettings: _persisted.startingSettings,
   referenceApiOverride: _persisted.referenceApiOverride,
   targetApiOverride: _persisted.targetApiOverride,
-  isNarrationEnabled: true,
+  isNarrationEnabled: _persisted.isNarrationEnabled,
 
   // Run state
   isRunning: false,
@@ -316,7 +319,7 @@ export const useCopycatStore = create<CopycatState>((set, get) => ({
     get().persist();
   },
 
-  setIsNarrationEnabled: (enabled) => set({ isNarrationEnabled: enabled }),
+  setIsNarrationEnabled: (enabled) => { set({ isNarrationEnabled: enabled }); get().persist(); },
 
   // Run state actions
   setIsRunning: (running) => set({ isRunning: running }),
@@ -502,7 +505,7 @@ export const useCopycatStore = create<CopycatState>((set, get) => ({
     const {
       referenceModelId, targetModelId, selectedScenarioId,
       selectedPromptSet, tuningTarget, promptEditingMode, customPromptPaths, maxRounds, lockedSettings,
-      customInstructions, startingSettings, referenceApiOverride, targetApiOverride,
+      customInstructions, startingSettings, referenceApiOverride, targetApiOverride, isNarrationEnabled,
     } = get();
     try {
       localStorage.setItem(
@@ -510,7 +513,7 @@ export const useCopycatStore = create<CopycatState>((set, get) => ({
         JSON.stringify({
           referenceModelId, targetModelId, selectedScenarioId,
           selectedPromptSet, tuningTarget, promptEditingMode, customPromptPaths, maxRounds, lockedSettings,
-          customInstructions, startingSettings, referenceApiOverride, targetApiOverride,
+          customInstructions, startingSettings, referenceApiOverride, targetApiOverride, isNarrationEnabled,
         })
       );
     } catch { /* ignore */ }
