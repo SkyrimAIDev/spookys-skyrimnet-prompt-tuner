@@ -24,7 +24,10 @@ import {
   Settings2,
   ScanSearch,
   Play,
+  X,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { buildQuickModelProfile } from "@/lib/utils/quick-model-profile";
 
 const CATEGORY_ICONS: Record<BenchmarkCategory, React.ReactNode> = {
   dialogue: <MessageSquare className="h-3.5 w-3.5" />,
@@ -50,6 +53,12 @@ export function BenchmarkSetup() {
   const setActiveScenarioId = useBenchmarkStore((s) => s.setActiveScenarioId);
   const customScenarios = useBenchmarkStore((s) => s.customScenarios);
   const activePromptSet = useAppStore((s) => s.activePromptSet);
+  const quickModels = useBenchmarkStore((s) => s.quickModels);
+  const selectedQuickModels = useBenchmarkStore((s) => s.selectedQuickModels);
+  const addQuickModel = useBenchmarkStore((s) => s.addQuickModel);
+  const removeQuickModel = useBenchmarkStore((s) => s.removeQuickModel);
+  const toggleQuickModel = useBenchmarkStore((s) => s.toggleQuickModel);
+  const [quickModelInput, setQuickModelInput] = useState("");
   const [customDialogOpen, setCustomDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<BenchmarkCategory | null>(null);
   const [promptSets, setPromptSets] = useState<string[]>([]);
@@ -77,7 +86,15 @@ export function BenchmarkSetup() {
     const selectedProfiles = profiles.filter((p) =>
       selectedProfileIds.includes(p.id)
     );
-    if (selectedProfiles.length === 0) return;
+
+    // Build ephemeral profiles from selected quick models
+    const activeProfile = profiles.find((p) => p.id === useProfileStore.getState().activeProfileId) || profiles[0];
+    const quickModelProfiles = activeProfile
+      ? selectedQuickModels.map((model) => buildQuickModelProfile(model, activeProfile))
+      : [];
+
+    const allProfiles = [...selectedProfiles, ...quickModelProfiles];
+    if (allProfiles.length === 0) return;
 
     const scenarioId = activeScenarioIds[activeCategory];
     const scenario = scenarioId
@@ -91,10 +108,10 @@ export function BenchmarkSetup() {
       : selectedPromptSet;
 
     useBenchmarkStore.getState().setIsRunning(true);
-    runBenchmark(activeCategory, selectedProfiles, scenario, resolvedPromptSet || undefined);
+    runBenchmark(activeCategory, allProfiles, scenario, resolvedPromptSet || undefined);
   };
 
-  const noProfilesSelected = selectedProfileIds.length === 0;
+  const noProfilesSelected = selectedProfileIds.length === 0 && selectedQuickModels.length === 0;
 
   return (
     <div className="flex h-full flex-col bg-card">
@@ -155,6 +172,74 @@ export function BenchmarkSetup() {
                 })}
               </div>
             )}
+          </div>
+
+          {/* Quick Models */}
+          <div className="space-y-1.5">
+            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">
+              Quick Models
+            </div>
+            <div className="px-1">
+              <Input
+                value={quickModelInput}
+                onChange={(e) => setQuickModelInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && quickModelInput.trim()) {
+                    addQuickModel(quickModelInput);
+                    setQuickModelInput("");
+                  }
+                }}
+                placeholder="Type model name, press Enter..."
+                className="h-6 text-xs"
+                disabled={isRunning}
+              />
+            </div>
+            {quickModels.length > 0 && (
+              <div className="space-y-0.5">
+                {quickModels.map((model) => {
+                  const isSelected = selectedQuickModels.includes(model);
+                  return (
+                    <div
+                      key={model}
+                      className={`flex items-center gap-2 rounded px-2 py-1 text-xs transition-colors ${
+                        isSelected
+                          ? "bg-primary/10 border border-primary/30"
+                          : "hover:bg-accent/50 border border-transparent"
+                      } ${isRunning ? "opacity-50" : ""}`}
+                    >
+                      <button
+                        onClick={() => toggleQuickModel(model)}
+                        disabled={isRunning}
+                        className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                      >
+                        <span
+                          className={`h-3 w-3 rounded-sm border flex items-center justify-center shrink-0 ${
+                            isSelected ? "bg-primary border-primary" : "border-muted-foreground/30"
+                          }`}
+                        >
+                          {isSelected && (
+                            <svg viewBox="0 0 12 12" className="h-2.5 w-2.5 text-primary-foreground">
+                              <path d="M10 3L4.5 8.5L2 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                        </span>
+                        <span className="truncate font-mono text-[10px]">{model}</span>
+                      </button>
+                      <button
+                        onClick={() => removeQuickModel(model)}
+                        disabled={isRunning}
+                        className="shrink-0 p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="text-[9px] text-muted-foreground/60 px-1">
+              Uses active profile&apos;s API settings
+            </div>
           </div>
 
           <Separator />

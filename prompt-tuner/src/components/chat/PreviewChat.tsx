@@ -10,6 +10,7 @@ import { useAppStore } from "@/stores/appStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { useTriggerStore } from "@/stores/triggerStore";
 import { sendLlmRequest, sendLlmRequestWithSlot } from "@/lib/llm/client";
+import { buildQuickModelProfile } from "@/lib/utils/quick-model-profile";
 import { runTargetSelection, runRealActionSelector, runSpeakerPrediction } from "@/lib/pipeline/chat-pipeline";
 import { buildEnabledSavesPayload } from "@/lib/pipeline/save-bio-payload";
 import type { ChatMessage } from "@/types/llm";
@@ -202,9 +203,18 @@ export function PreviewChat() {
         // Send dialogue to all selected profiles in parallel
         clearMultichatStreaming();
 
-        const multichatProfiles = validMultichatIds
+        const profilesFromIds = validMultichatIds
           .map((id) => profiles.find((p) => p.id === id))
           .filter(Boolean) as typeof profiles;
+
+        // Build ephemeral profiles from selected quick models
+        const { selectedMultichatQuickModels } = useSimulationStore.getState();
+        const baseProfile = profiles.find((p) => p.id === useProfileStore.getState().activeProfileId) || profiles[0];
+        const quickModelProfiles = baseProfile && selectedMultichatQuickModels.length > 0
+          ? selectedMultichatQuickModels.map((model: string) => buildQuickModelProfile(model, baseProfile))
+          : [];
+
+        const multichatProfiles = [...profilesFromIds, ...quickModelProfiles];
 
         const promises = multichatProfiles.map(async (profile) => {
           const slot = { ...profile.slots.default };

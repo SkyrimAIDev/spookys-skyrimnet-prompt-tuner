@@ -133,6 +133,8 @@ interface SimulationState {
   // Multichat comparison
   multichatEnabled: boolean;
   multichatProfileIds: string[];  // persisted checked profiles
+  multichatQuickModels: string[];  // quick model names for comparison
+  selectedMultichatQuickModels: string[];  // which quick models are active
   multichatStreaming: Record<string, string>;  // profileId → streamed text
 
   // Player
@@ -184,6 +186,9 @@ interface SimulationState {
   // Multichat
   setMultichatEnabled: (enabled: boolean) => void;
   setMultichatProfileIds: (ids: string[]) => void;
+  addMultichatQuickModel: (model: string) => void;
+  removeMultichatQuickModel: (model: string) => void;
+  toggleMultichatQuickModel: (model: string) => void;
   setMultichatStreaming: (profileId: string, text: string) => void;
   clearMultichatStreaming: () => void;
 }
@@ -230,6 +235,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   isNarrationEnabled: true,
   multichatEnabled: false,
   multichatProfileIds: [],
+  multichatQuickModels: [],
+  selectedMultichatQuickModels: [],
   multichatStreaming: {},
 
   setPlayerConfig: (config) => {
@@ -396,6 +403,30 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   setAutochatStatus: (status) => set({ autochatStatus: status }),
   setMultichatEnabled: (enabled) => set({ multichatEnabled: enabled }),
   setMultichatProfileIds: (ids) => set({ multichatProfileIds: ids }),
+  addMultichatQuickModel: (model: string) => {
+    const trimmed = model.trim();
+    if (!trimmed) return;
+    set((s) => {
+      if (s.multichatQuickModels.includes(trimmed)) return s;
+      return {
+        multichatQuickModels: [...s.multichatQuickModels, trimmed],
+        selectedMultichatQuickModels: [...s.selectedMultichatQuickModels, trimmed],
+      };
+    });
+  },
+  removeMultichatQuickModel: (model: string) => {
+    set((s) => ({
+      multichatQuickModels: s.multichatQuickModels.filter((m) => m !== model),
+      selectedMultichatQuickModels: s.selectedMultichatQuickModels.filter((m) => m !== model),
+    }));
+  },
+  toggleMultichatQuickModel: (model: string) => {
+    set((s) => ({
+      selectedMultichatQuickModels: s.selectedMultichatQuickModels.includes(model)
+        ? s.selectedMultichatQuickModels.filter((m) => m !== model)
+        : [...s.selectedMultichatQuickModels, model],
+    }));
+  },
   setMultichatStreaming: (profileId, text) =>
     set((s) => ({ multichatStreaming: { ...s.multichatStreaming, [profileId]: text } })),
   clearMultichatStreaming: () => set({ multichatStreaming: {} }),

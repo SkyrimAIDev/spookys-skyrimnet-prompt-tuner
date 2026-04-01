@@ -16,8 +16,11 @@ function loadPersisted(): {
   customScenarios: BenchmarkScenario[];
   activeScenarioIds: Record<string, string>;
   selectedPromptSet: string;
+  quickModels: string[];
+  selectedQuickModels: string[];
 } {
-  if (typeof window === "undefined") return { selectedProfileIds: [], customScenarios: [], activeScenarioIds: {}, selectedPromptSet: "__active__" };
+  const defaults = { selectedProfileIds: [] as string[], customScenarios: [] as BenchmarkScenario[], activeScenarioIds: {} as Record<string, string>, selectedPromptSet: "__active__", quickModels: [] as string[], selectedQuickModels: [] as string[] };
+  if (typeof window === "undefined") return defaults;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
@@ -27,14 +30,18 @@ function loadPersisted(): {
         customScenarios: data.customScenarios ?? [],
         activeScenarioIds: data.activeScenarioIds ?? {},
         selectedPromptSet: data.selectedPromptSet ?? "__active__",
+        quickModels: data.quickModels ?? [],
+        selectedQuickModels: data.selectedQuickModels ?? [],
       };
     }
   } catch { /* ignore */ }
-  return { selectedProfileIds: [], customScenarios: [], activeScenarioIds: {}, selectedPromptSet: "__active__" };
+  return defaults;
 }
 
 interface BenchmarkState {
   selectedProfileIds: string[];
+  quickModels: string[];
+  selectedQuickModels: string[];
   selectedPromptSet: string;
   activeCategory: BenchmarkCategory | null;
   activeScenarioIds: Record<string, string>;
@@ -70,6 +77,9 @@ interface BenchmarkState {
   updateCustomScenario: (id: string, scenario: BenchmarkScenario) => void;
   deleteCustomScenario: (id: string) => void;
   setIsNarrationEnabled: (enabled: boolean) => void;
+  addQuickModel: (model: string) => void;
+  removeQuickModel: (model: string) => void;
+  toggleQuickModel: (model: string) => void;
   persist: () => void;
 }
 
@@ -77,6 +87,8 @@ const _persisted = loadPersisted();
 
 export const useBenchmarkStore = create<BenchmarkState>((set, get) => ({
   selectedProfileIds: _persisted.selectedProfileIds,
+  quickModels: _persisted.quickModels,
+  selectedQuickModels: _persisted.selectedQuickModels,
   selectedPromptSet: _persisted.selectedPromptSet,
   activeCategory: null,
   activeScenarioIds: _persisted.activeScenarioIds,
@@ -252,13 +264,41 @@ export const useBenchmarkStore = create<BenchmarkState>((set, get) => ({
 
   setIsNarrationEnabled: (enabled) => set({ isNarrationEnabled: enabled }),
 
+  addQuickModel: (model) => {
+    const trimmed = model.trim();
+    if (!trimmed) return;
+    set((s) => {
+      if (s.quickModels.includes(trimmed)) return s;
+      return {
+        quickModels: [...s.quickModels, trimmed],
+        selectedQuickModels: [...s.selectedQuickModels, trimmed],
+      };
+    });
+    get().persist();
+  },
+  removeQuickModel: (model) => {
+    set((s) => ({
+      quickModels: s.quickModels.filter((m) => m !== model),
+      selectedQuickModels: s.selectedQuickModels.filter((m) => m !== model),
+    }));
+    get().persist();
+  },
+  toggleQuickModel: (model) => {
+    set((s) => ({
+      selectedQuickModels: s.selectedQuickModels.includes(model)
+        ? s.selectedQuickModels.filter((m) => m !== model)
+        : [...s.selectedQuickModels, model],
+    }));
+    get().persist();
+  },
+
   persist: () => {
     if (typeof window === "undefined") return;
-    const { selectedProfileIds, customScenarios, activeScenarioIds, selectedPromptSet } = get();
+    const { selectedProfileIds, customScenarios, activeScenarioIds, selectedPromptSet, quickModels, selectedQuickModels } = get();
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ selectedProfileIds, customScenarios, activeScenarioIds, selectedPromptSet })
+        JSON.stringify({ selectedProfileIds, customScenarios, activeScenarioIds, selectedPromptSet, quickModels, selectedQuickModels })
       );
     } catch { /* ignore */ }
   },

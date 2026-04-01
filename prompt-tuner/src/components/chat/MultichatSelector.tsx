@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -11,6 +11,7 @@ import {
 import { useSimulationStore } from "@/stores/simulationStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { Columns3, Power, PowerOff, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 export function MultichatSelector() {
   const multichatEnabled = useSimulationStore((s) => s.multichatEnabled);
@@ -18,6 +19,12 @@ export function MultichatSelector() {
   const multichatProfileIds = useSimulationStore((s) => s.multichatProfileIds);
   const setMultichatProfileIds = useSimulationStore((s) => s.setMultichatProfileIds);
   const clearChat = useSimulationStore((s) => s.clearChat);
+  const multichatQuickModels = useSimulationStore((s) => s.multichatQuickModels);
+  const selectedMultichatQuickModels = useSimulationStore((s) => s.selectedMultichatQuickModels);
+  const addMultichatQuickModel = useSimulationStore((s) => s.addMultichatQuickModel);
+  const removeMultichatQuickModel = useSimulationStore((s) => s.removeMultichatQuickModel);
+  const toggleMultichatQuickModel = useSimulationStore((s) => s.toggleMultichatQuickModel);
+  const [quickModelInput, setQuickModelInput] = useState("");
   const profiles = useProfileStore((s) => s.profiles);
   const activeProfileId = useProfileStore((s) => s.activeProfileId);
 
@@ -109,7 +116,7 @@ export function MultichatSelector() {
             size="sm"
             className="w-full h-7 text-[11px]"
             onClick={handleToggleEnabled}
-            disabled={!multichatEnabled && validProfileIds.length === 0}
+            disabled={!multichatEnabled && validProfileIds.length === 0 && selectedMultichatQuickModels.length === 0}
           >
             {multichatEnabled ? (
               <>
@@ -183,10 +190,61 @@ export function MultichatSelector() {
             </div>
           </div>
 
+          {/* Quick Models */}
+          <div className="space-y-1 border-t pt-2">
+            <Label className="text-[10px] text-muted-foreground">
+              Quick Models
+            </Label>
+            <Input
+              value={quickModelInput}
+              onChange={(e) => setQuickModelInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && quickModelInput.trim()) {
+                  addMultichatQuickModel(quickModelInput);
+                  setQuickModelInput("");
+                }
+              }}
+              placeholder="Type model name, press Enter..."
+              className="h-6 text-[10px]"
+            />
+            {multichatQuickModels.length > 0 && (
+              <div className="space-y-0.5">
+                {multichatQuickModels.map((model) => {
+                  const isSelected = selectedMultichatQuickModels.includes(model);
+                  return (
+                    <label
+                      key={model}
+                      className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer transition-colors ${
+                        isSelected ? "bg-cyan-500/10 hover:bg-cyan-500/15" : "hover:bg-muted/50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleMultichatQuickModel(model)}
+                        className="h-3 w-3 accent-cyan-500 shrink-0"
+                      />
+                      <span className="text-[10px] font-mono truncate flex-1 min-w-0">{model}</span>
+                      <button
+                        onClick={(e) => { e.preventDefault(); removeMultichatQuickModel(model); }}
+                        className="shrink-0 p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <div className="text-[9px] text-muted-foreground/60">
+              Inherits settings from active profile
+            </div>
+          </div>
+
           {/* Selected count */}
-          {validProfileIds.length > 0 && (
+          {(validProfileIds.length > 0 || selectedMultichatQuickModels.length > 0) && (
             <div className="text-[10px] text-muted-foreground border-t pt-2">
-              {validProfileIds.length} profile{validProfileIds.length !== 1 ? "s" : ""} selected
+              {validProfileIds.length + selectedMultichatQuickModels.length} model{(validProfileIds.length + selectedMultichatQuickModels.length) !== 1 ? "s" : ""} selected
               {!multichatEnabled && " (not active)"}
             </div>
           )}
