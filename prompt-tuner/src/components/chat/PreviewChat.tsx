@@ -47,11 +47,13 @@ export function PreviewChat() {
   const clearMultichatStreaming = useSimulationStore((s) => s.clearMultichatStreaming);
   const profiles = useProfileStore((s) => s.profiles);
 
-  // Multichat is active when enabled AND has valid (still-existing) profiles selected
+  // Multichat is active when enabled AND has valid profiles or quick models selected
+  const multichatQuickModelsSelected = useSimulationStore((s) => s.selectedMultichatQuickModels);
   const validMultichatIds = multichatEnabled
     ? multichatProfileIds.filter((id) => profiles.some((p) => p.id === id))
     : [];
-  const isMultichat = validMultichatIds.length > 0;
+  const activeQuickModels = multichatEnabled ? multichatQuickModelsSelected : [];
+  const isMultichat = validMultichatIds.length > 0 || activeQuickModels.length > 0;
 
   const [input, setInput] = useState("");
   const [streamingText, setStreamingText] = useState("");
