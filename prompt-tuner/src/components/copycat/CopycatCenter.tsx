@@ -306,22 +306,21 @@ export function CopycatCenter() {
   const summaryRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
-  const programmaticScrollRef = useRef(false);
+  const programmaticScrollUntil = useRef(0);
   const [showJumpButton, setShowJumpButton] = useState(false);
 
   const scrollToBottom = useCallback(() => {
     const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
     if (!viewport) return;
-    programmaticScrollRef.current = true;
+    programmaticScrollUntil.current = Date.now() + 150;
     viewport.scrollTop = viewport.scrollHeight;
-    requestAnimationFrame(() => { programmaticScrollRef.current = false; });
   }, []);
 
   useEffect(() => {
     const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
     if (!viewport) return;
     const handleScroll = () => {
-      if (programmaticScrollRef.current) return;
+      if (Date.now() < programmaticScrollUntil.current) return;
       const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
       if (atBottom) {
         autoScrollRef.current = true;
@@ -351,9 +350,8 @@ export function CopycatCenter() {
 
   useEffect(() => {
     if (autoScrollRef.current && (sessionSummary || summaryStream) && summaryRef.current) {
-      programmaticScrollRef.current = true;
+      programmaticScrollUntil.current = Date.now() + 150;
       summaryRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-      requestAnimationFrame(() => { programmaticScrollRef.current = false; });
     }
   }, [sessionSummary, summaryStream ? "streaming" : ""]);
 

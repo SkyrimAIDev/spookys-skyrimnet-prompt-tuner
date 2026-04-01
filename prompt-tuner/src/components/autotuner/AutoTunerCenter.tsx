@@ -305,26 +305,24 @@ export function AutoTunerCenter() {
   const summaryRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
-  const programmaticScrollRef = useRef(false);
+  const programmaticScrollUntil = useRef(0);
   const [showJumpButton, setShowJumpButton] = useState(false);
 
   // Helper: scroll to bottom programmatically without triggering user-scroll detection
   const scrollToBottom = useCallback(() => {
     const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
     if (!viewport) return;
-    programmaticScrollRef.current = true;
+    // Suppress user-scroll detection for 150ms after programmatic scroll
+    programmaticScrollUntil.current = Date.now() + 150;
     viewport.scrollTop = viewport.scrollHeight;
-    // Reset the flag after the browser processes the scroll event
-    requestAnimationFrame(() => { programmaticScrollRef.current = false; });
   }, []);
 
-  // Detect user scroll — ignore programmatic scrolls
+  // Detect user scroll — ignore recent programmatic scrolls
   useEffect(() => {
     const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
     if (!viewport) return;
     const handleScroll = () => {
-      // Skip detection for scrolls we triggered ourselves
-      if (programmaticScrollRef.current) return;
+      if (Date.now() < programmaticScrollUntil.current) return;
       const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
       if (atBottom) {
         autoScrollRef.current = true;
@@ -357,9 +355,8 @@ export function AutoTunerCenter() {
   // Auto-scroll to summary when it appears
   useEffect(() => {
     if (autoScrollRef.current && (sessionSummary || summaryStream) && summaryRef.current) {
-      programmaticScrollRef.current = true;
+      programmaticScrollUntil.current = Date.now() + 150;
       summaryRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-      requestAnimationFrame(() => { programmaticScrollRef.current = false; });
     }
   }, [sessionSummary, summaryStream ? "streaming" : ""]);
 
