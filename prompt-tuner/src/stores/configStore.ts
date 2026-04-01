@@ -246,3 +246,16 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     }
   },
 }));
+
+// Auto-load from localStorage on creation (runs once, client-side only)
+if (typeof window !== "undefined") {
+  useConfigStore.getState().load();
+
+  // Also load profiles now that config is hydrated
+  // (profileStore.load() needs the current config to create defaults if no profiles exist)
+  Promise.resolve().then(() => {
+    const { useProfileStore } = require("@/stores/profileStore");
+    const config = useConfigStore.getState();
+    useProfileStore.getState().load(config.globalApiKey, config.slots);
+  });
+}
