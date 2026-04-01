@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -11,7 +11,7 @@ import {
 import { useSimulationStore } from "@/stores/simulationStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { Columns3, Power, PowerOff, X } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { QuickModelInput } from "@/components/shared/QuickModelInput";
 
 export function MultichatSelector() {
   const multichatEnabled = useSimulationStore((s) => s.multichatEnabled);
@@ -24,7 +24,6 @@ export function MultichatSelector() {
   const addMultichatQuickModel = useSimulationStore((s) => s.addMultichatQuickModel);
   const removeMultichatQuickModel = useSimulationStore((s) => s.removeMultichatQuickModel);
   const toggleMultichatQuickModel = useSimulationStore((s) => s.toggleMultichatQuickModel);
-  const [quickModelInput, setQuickModelInput] = useState("");
   const profiles = useProfileStore((s) => s.profiles);
   const activeProfileId = useProfileStore((s) => s.activeProfileId);
 
@@ -195,18 +194,7 @@ export function MultichatSelector() {
             <Label className="text-[10px] text-muted-foreground">
               Quick Models
             </Label>
-            <Input
-              value={quickModelInput}
-              onChange={(e) => setQuickModelInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && quickModelInput.trim()) {
-                  addMultichatQuickModel(quickModelInput);
-                  setQuickModelInput("");
-                }
-              }}
-              placeholder="Type model name, press Enter..."
-              className="h-6 text-[10px]"
-            />
+            <QuickModelInput onAdd={addMultichatQuickModel} />
             {multichatQuickModels.length > 0 && (
               <div className="space-y-0.5">
                 {multichatQuickModels.map((model) => {

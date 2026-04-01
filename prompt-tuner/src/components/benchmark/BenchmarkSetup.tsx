@@ -26,8 +26,8 @@ import {
   Play,
   X,
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
 import { buildQuickModelProfile } from "@/lib/utils/quick-model-profile";
+import { QuickModelInput } from "@/components/shared/QuickModelInput";
 
 const CATEGORY_ICONS: Record<BenchmarkCategory, React.ReactNode> = {
   dialogue: <MessageSquare className="h-3.5 w-3.5" />,
@@ -58,7 +58,6 @@ export function BenchmarkSetup() {
   const addQuickModel = useBenchmarkStore((s) => s.addQuickModel);
   const removeQuickModel = useBenchmarkStore((s) => s.removeQuickModel);
   const toggleQuickModel = useBenchmarkStore((s) => s.toggleQuickModel);
-  const [quickModelInput, setQuickModelInput] = useState("");
   const [customDialogOpen, setCustomDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<BenchmarkCategory | null>(null);
   const [promptSets, setPromptSets] = useState<string[]>([]);
@@ -180,19 +179,7 @@ export function BenchmarkSetup() {
               Quick Models
             </div>
             <div className="px-1">
-              <Input
-                value={quickModelInput}
-                onChange={(e) => setQuickModelInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && quickModelInput.trim()) {
-                    addQuickModel(quickModelInput);
-                    setQuickModelInput("");
-                  }
-                }}
-                placeholder="Type model name, press Enter..."
-                className="h-6 text-xs"
-                disabled={isRunning}
-              />
+              <QuickModelInput onAdd={addQuickModel} disabled={isRunning} />
             </div>
             {quickModels.length > 0 && (
               <div className="space-y-0.5">
