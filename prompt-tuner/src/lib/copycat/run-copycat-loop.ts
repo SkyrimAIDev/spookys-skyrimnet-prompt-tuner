@@ -338,16 +338,7 @@ export async function runCopycatLoop(params: CopycatLoopParams) {
 
         if (abortController.signal.aborted) break;
 
-        // ── VERIFICATION PHASE (optional) ──
-        if (parsed.verificationRequests.length > 0) {
-          store.setPhase("verifying");
-          store.setRoundPhase(roundIdx, "verifying");
-
-          // Run verification requests are ad-hoc — we skip them for simplicity
-          // and just store empty verification runs. Full implementation would
-          // inject each custom line as a player message and get the target's response.
-          // For now we mark them as requested but not executed.
-        }
+        // Verification phase removed — was unimplemented dead code
 
         // ── APPLY PHASE ──
         store.setPhase("applying");
@@ -366,6 +357,7 @@ export async function runCopycatLoop(params: CopycatLoopParams) {
           const mode = promptEditingMode || "auto";
           let pendingChanges = parsed.proposal.promptChanges;
           const allApplied: import("@/types/autotuner").PromptChange[] = [];
+          let finalProposalRaw = copycatLog.response;
           const MAX_REDIRECT_RETRIES = 2;
 
           for (let retry = 0; retry <= MAX_REDIRECT_RETRIES; retry++) {
@@ -422,6 +414,12 @@ Please propose new prompt_changes that incorporate the SAME improvements into th
               const { parseCopycatResponse: parseCR } = await import("./parse-copycat-response");
               const redirectParsed = parseCR(redirectLog.response);
               pendingChanges = redirectParsed.proposal.promptChanges;
+              finalProposalRaw = redirectLog.response;
+              // Also apply settings changes from redirect (matching autotuner behavior)
+              if (redirectParsed.proposal.settingsChanges.length > 0) {
+                workingSettings = applySettingsChanges(workingSettings, redirectParsed.proposal.settingsChanges);
+                store.setWorkingSettings(workingSettings);
+              }
             } catch {
               break;
             }
@@ -432,7 +430,7 @@ Please propose new prompt_changes that incorporate the SAME improvements into th
             store.setRoundProposal(roundIdx, {
               ...currentProposal,
               promptChanges: allApplied,
-            }, copycatLog.response);
+            }, finalProposalRaw);
           }
         }
 

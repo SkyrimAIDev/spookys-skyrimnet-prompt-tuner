@@ -542,6 +542,7 @@ export async function runTuningLoop(
           const mode = promptEditingMode || "auto";
           let pendingChanges = proposal.promptChanges;
           const allApplied: import("@/types/autotuner").PromptChange[] = [];
+          let finalProposalRaw = proposalLog.response;
           const MAX_REDIRECT_RETRIES = 2;
 
           for (let retry = 0; retry <= MAX_REDIRECT_RETRIES; retry++) {
@@ -601,6 +602,7 @@ Please propose new prompt_changes that incorporate the SAME improvements into th
               if (redirectLog.error || abortController.signal.aborted) break;
               const redirectProposal = parseProposal(redirectLog.response);
               pendingChanges = redirectProposal.promptChanges;
+              finalProposalRaw = redirectLog.response;
               // Also apply any additional settings changes from the redirect
               if (redirectProposal.settingsChanges.length > 0) {
                 workingSettings = applySettingsChanges(workingSettings, redirectProposal.settingsChanges);
@@ -617,7 +619,7 @@ Please propose new prompt_changes that incorporate the SAME improvements into th
             store.setRoundProposal(roundIdx, {
               ...currentProposal,
               promptChanges: allApplied,
-            }, proposalLog.response);
+            }, finalProposalRaw);
           }
 
         }

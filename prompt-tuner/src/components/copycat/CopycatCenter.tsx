@@ -316,30 +316,59 @@ export function CopycatCenter() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  const [showJumpButton, setShowJumpButton] = useState(false);
+
+  // Detect user scroll — pause auto-scroll when they scroll away
+  useEffect(() => {
+    const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
+    if (!viewport) return;
+    const handleScroll = () => {
+      const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
+      if (atBottom) {
+        setAutoScrollEnabled(true);
+        setShowJumpButton(false);
+      } else if (isRunning) {
+        setAutoScrollEnabled(false);
+        setShowJumpButton(true);
+      }
+    };
+    viewport.addEventListener("scroll", handleScroll);
+    return () => viewport.removeEventListener("scroll", handleScroll);
+  }, [isRunning]);
 
   useEffect(() => {
-    if (isRunning && scrollRef.current) {
+    if (isRunning) { setAutoScrollEnabled(true); setShowJumpButton(false); }
+  }, [isRunning]);
+
+  const jumpToLatest = useCallback(() => {
+    const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+    setAutoScrollEnabled(true);
+    setShowJumpButton(false);
+  }, []);
+
+  useEffect(() => {
+    if (autoScrollEnabled && isRunning && scrollRef.current) {
       const viewport = scrollRef.current.closest("[data-radix-scroll-area-viewport]");
       if (viewport) viewport.scrollTop = viewport.scrollHeight;
     }
-  }, [comparisonStream, proposalStream, isRunning, rounds, statusMessage]);
+  }, [comparisonStream, proposalStream, isRunning, rounds, statusMessage, autoScrollEnabled]);
 
-  // Auto-scroll to summary when it appears
   useEffect(() => {
-    if ((sessionSummary || summaryStream) && summaryRef.current) {
+    if (autoScrollEnabled && (sessionSummary || summaryStream) && summaryRef.current) {
       summaryRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [sessionSummary, summaryStream ? "streaming" : ""]);
+  }, [sessionSummary, summaryStream ? "streaming" : "", autoScrollEnabled]);
 
-  // Auto-scroll to bottom on new chat messages or streaming
   useEffect(() => {
-    if ((postTuningMessages.length > 0 || postTuningStream) && scrollRef.current) {
+    if (autoScrollEnabled && (postTuningMessages.length > 0 || postTuningStream) && scrollRef.current) {
       requestAnimationFrame(() => {
         const viewport = scrollRef.current?.closest("[data-radix-scroll-area-viewport]");
         if (viewport) viewport.scrollTop = viewport.scrollHeight;
       });
     }
-  }, [postTuningMessages, postTuningStream]);
+  }, [postTuningMessages, postTuningStream, autoScrollEnabled]);
 
   if (phase === "idle" && rounds.length === 0) {
     return (
@@ -401,7 +430,8 @@ export function CopycatCenter() {
       </div>
 
       {/* Rounds */}
-      <ScrollArea className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden relative">
+      <ScrollArea className="h-full">
         <div ref={scrollRef} className="p-4 space-y-3 min-w-0">
           {rounds.map((round, idx) => (
             <CopycatRoundCard
@@ -470,6 +500,17 @@ export function CopycatCenter() {
           )}
         </div>
       </ScrollArea>
+
+      {showJumpButton && (
+        <button
+          onClick={jumpToLatest}
+          className="absolute bottom-3 right-5 z-10 flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-[10px] font-medium text-primary-foreground shadow-lg hover:bg-primary/90 transition-colors"
+        >
+          <ChevronDown className="h-3 w-3" />
+          Jump to latest
+        </button>
+      )}
+      </div>
 
       {/* Chat input — pinned at bottom outside ScrollArea */}
       {phase === "complete" && !isRunning && (
