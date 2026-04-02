@@ -113,6 +113,31 @@ function CopycatCopyButton({ text }: { text: string }) {
   );
 }
 
+function CopycatAnalysisStream({ stream }: { stream: string }) {
+  const [showDetails, setShowDetails] = useState(false);
+  return (
+    <div className="text-xs">
+      <div className="flex items-center gap-2">
+        <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+        <span className="text-muted-foreground">Analyzing styles...</span>
+        {stream && (
+          <button
+            onClick={() => setShowDetails((v) => !v)}
+            className="text-[9px] text-muted-foreground/60 hover:text-muted-foreground underline ml-auto"
+          >
+            {showDetails ? "Hide details" : "Show details"}
+          </button>
+        )}
+      </div>
+      {showDetails && stream && (
+        <pre className="whitespace-pre-wrap break-words text-[10px] text-muted-foreground/80 max-h-60 overflow-auto mt-1 pt-1 border-t border-border/30">
+          {stream}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 function CopycatStreamBubble({ stream }: { stream: string }) {
   const [showVerbose, setShowVerbose] = useState(false);
   return (
@@ -652,9 +677,13 @@ function CopycatRoundCard({
             onToggle={() => setComparisonOpen(!comparisonOpen)}
             streaming={showComparisonStream && !!comparisonStream}
           >
-            <pre className="whitespace-pre-wrap break-words text-xs max-h-64 overflow-auto">
-              {round.comparisonText || comparisonStream || "Analyzing styles..."}
-            </pre>
+            {round.comparisonText ? (
+              <pre className="whitespace-pre-wrap break-words text-xs max-h-64 overflow-auto">
+                {round.comparisonText}
+              </pre>
+            ) : (
+              <CopycatAnalysisStream stream={comparisonStream} />
+            )}
           </CollapsibleSection>
         )}
 
