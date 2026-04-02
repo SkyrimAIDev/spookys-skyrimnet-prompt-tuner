@@ -228,16 +228,18 @@ export function CombinePromptsDialog({ open, onOpenChange }: CombinePromptsDialo
             {/* Conflict summary + optional override */}
             {conflicts && conflicts.length > 0 && (
               <div className="space-y-1.5">
-                <button
-                  onClick={() => setShowConflictDetails((v) => !v)}
-                  className="flex items-center gap-2 text-xs text-amber-400 hover:text-amber-300 transition-colors w-full text-left"
-                >
+                <div className="flex items-center gap-2 text-xs text-amber-400">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                   <span>{conflicts.length} conflicting file{conflicts.length !== 1 ? "s" : ""} — resolved by priority</span>
-                  <span className="ml-auto text-[9px] text-muted-foreground/60 underline">
-                    {showConflictDetails ? "Hide" : "Review & override"}
-                  </span>
-                </button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs w-full border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                  onClick={() => setShowConflictDetails((v) => !v)}
+                >
+                  {showConflictDetails ? "Hide Conflicts" : "Manually Resolve Conflicts"}
+                </Button>
 
                 {showConflictDetails && (
                   <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 border rounded p-2">
