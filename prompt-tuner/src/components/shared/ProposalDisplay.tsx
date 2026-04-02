@@ -20,13 +20,13 @@ export function ProposalDisplay({ proposal }: { proposal: NonNullable<TunerRound
   }
 
   return (
-    <div className="space-y-2 min-w-0">
+    <div className="space-y-2 min-w-0 overflow-hidden">
       {proposal.reasoning && (
         <p className="text-xs text-muted-foreground italic break-words">{proposal.reasoning}</p>
       )}
 
       {proposal.settingsChanges.length > 0 && (
-        <div className="space-y-1 min-w-0">
+        <div className="space-y-1 min-w-0 overflow-hidden">
           <div className="text-[10px] font-medium text-muted-foreground uppercase">Settings Changes</div>
           <div className="rounded border overflow-hidden">
             <table className="w-full text-xs table-fixed">
@@ -54,7 +54,7 @@ export function ProposalDisplay({ proposal }: { proposal: NonNullable<TunerRound
       )}
 
       {proposal.promptChanges.length > 0 && (
-        <div className="space-y-1 min-w-0">
+        <div className="space-y-1 min-w-0 overflow-hidden">
           <div className="text-[10px] font-medium text-muted-foreground uppercase">Prompt Changes</div>
           {proposal.promptChanges.map((pc, i) => (
             <div key={i} className="rounded border p-2 space-y-1 min-w-0 overflow-hidden">
@@ -62,7 +62,7 @@ export function ProposalDisplay({ proposal }: { proposal: NonNullable<TunerRound
                 {pc.filePath.replace(/\\/g, "/").split("/").slice(-2).join("/")}
               </div>
               <div className="text-xs text-muted-foreground break-words">{pc.reason}</div>
-              <div className="grid grid-cols-2 gap-1 text-[10px] min-w-0">
+              <div className="grid grid-cols-2 gap-1 text-[10px] min-w-0 overflow-hidden">
                 <ExpandableDiffBox content={pc.searchText || pc.originalContent} variant="removed" title={`${pc.filePath.replace(/\\/g, "/").split("/").pop()} — Before`} />
                 <ExpandableDiffBox content={pc.replaceText} variant="added" title={`${pc.filePath.replace(/\\/g, "/").split("/").pop()} — After`} />
               </div>
