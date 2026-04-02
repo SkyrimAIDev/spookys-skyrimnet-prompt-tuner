@@ -20,6 +20,8 @@ export function FileContextMenu({ node, position, onClose }: FileContextMenuProp
   const [showCopyToSet, setShowCopyToSet] = useState(false);
   const [newSetName, setNewSetName] = useState("");
   const [availableSets, setAvailableSets] = useState<string[]>([]);
+  const submenuRef = useRef<HTMLDivElement>(null);
+  const [submenuStyle, setSubmenuStyle] = useState<React.CSSProperties>({});
 
   // Close on outside click or Escape
   useEffect(() => {
@@ -34,6 +36,31 @@ export function FileContextMenu({ node, position, onClose }: FileContextMenuProp
       document.removeEventListener("mousedown", handleClick);
     };
   }, [onClose]);
+
+  // Adjust submenu position when it appears
+  useEffect(() => {
+    if (showCopyToSet && submenuRef.current) {
+      const rect = submenuRef.current.getBoundingClientRect();
+      const css: React.CSSProperties = { position: "absolute", zIndex: 50 };
+      // Flip left if overflows right edge
+      if (rect.right > window.innerWidth - 8) {
+        css.right = "100%";
+        css.left = "auto";
+        css.marginRight = "2px";
+      } else {
+        css.left = "100%";
+        css.marginLeft = "2px";
+      }
+      // Flip up if overflows bottom
+      if (rect.bottom > window.innerHeight - 8) {
+        css.bottom = "0";
+        css.top = "auto";
+      } else {
+        css.top = "0";
+      }
+      setSubmenuStyle(css);
+    }
+  }, [showCopyToSet]);
 
   // Adjust position so menu doesn't overflow viewport — measure actual height
   const [adjustedPos, setAdjustedPos] = useState(position);
@@ -215,7 +242,7 @@ export function FileContextMenu({ node, position, onClose }: FileContextMenuProp
           <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
         </button>
         {showCopyToSet && (
-          <div className="absolute left-full top-0 ml-0.5 z-50 w-52 rounded-md border bg-popover shadow-lg py-1 text-xs">
+          <div ref={submenuRef} style={submenuStyle} className="absolute w-52 rounded-md border bg-popover shadow-lg py-1 text-xs max-h-64 overflow-y-auto">
             {availableSets.map((name) => (
               <button
                 key={name}
