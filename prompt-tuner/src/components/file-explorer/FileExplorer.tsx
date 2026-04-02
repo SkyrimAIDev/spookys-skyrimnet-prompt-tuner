@@ -7,7 +7,8 @@ import { useFileStore } from "@/stores/fileStore";
 import { useAppStore } from "@/stores/appStore";
 import { FileTreeNode } from "./FileTreeNode";
 import { Button } from "@/components/ui/button";
-import { Search, Loader2, Archive, Lock, File, RefreshCw, FolderInput, X } from "lucide-react";
+import { Search, Loader2, Archive, Lock, File, RefreshCw, FolderInput, X, Merge } from "lucide-react";
+import { CombinePromptsDialog } from "./CombinePromptsDialog";
 import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
@@ -99,6 +100,7 @@ export function FileExplorer() {
   const [isImporting, setIsImporting] = useState(false);
   const [pendingImport, setPendingImport] = useState<{ folderName: string; files: DroppedFile[] } | null>(null);
   const [importName, setImportName] = useState("");
+  const [combineDialogOpen, setCombineDialogOpen] = useState(false);
   const dragCounter = useRef(0);
 
   // Fetch file tree on mount
@@ -356,15 +358,26 @@ export function FileExplorer() {
                       <span className="text-xs font-medium text-muted-foreground">
                         Custom Prompt Sets
                       </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-5 w-5"
-                        onClick={handleRefresh}
-                        title="Refresh file tree"
-                      >
-                        <RefreshCw className="h-3 w-3" />
-                      </Button>
+                      <div className="flex items-center gap-0.5">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5"
+                          onClick={() => setCombineDialogOpen(true)}
+                          title="Combine prompt sets"
+                        >
+                          <Merge className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5"
+                          onClick={handleRefresh}
+                          title="Refresh file tree"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -415,6 +428,8 @@ export function FileExplorer() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CombinePromptsDialog open={combineDialogOpen} onOpenChange={setCombineDialogOpen} />
     </div>
   );
 }
