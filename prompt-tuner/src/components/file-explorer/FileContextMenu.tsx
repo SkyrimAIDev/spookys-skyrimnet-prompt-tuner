@@ -35,12 +35,22 @@ export function FileContextMenu({ node, position, onClose }: FileContextMenuProp
     };
   }, [onClose]);
 
-  // Adjust position so menu doesn't overflow viewport
+  // Adjust position so menu doesn't overflow viewport — measure actual height
+  const [adjustedPos, setAdjustedPos] = useState(position);
+  useEffect(() => {
+    if (menuRef.current) {
+      const rect = menuRef.current.getBoundingClientRect();
+      const x = Math.min(position.x, window.innerWidth - rect.width - 8);
+      const y = Math.min(position.y, window.innerHeight - rect.height - 8);
+      setAdjustedPos({ x: Math.max(4, x), y: Math.max(4, y) });
+    }
+  }, [position]);
+
   const style: React.CSSProperties = {
     position: "fixed",
     zIndex: 9999,
-    left: Math.min(position.x, window.innerWidth - 220),
-    top: Math.min(position.y, window.innerHeight - 320),
+    left: adjustedPos.x,
+    top: adjustedPos.y,
   };
 
   const isFile = node.type === "file";
