@@ -24,6 +24,10 @@ export async function GET(request: NextRequest) {
     );
     return NextResponse.json(result);
   } catch (error) {
+    // Return empty result for non-existent directories (ENOENT) instead of 500
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return NextResponse.json({ nodes: [], total: 0 });
+    }
     console.error("Failed to load directory children:", error);
     return NextResponse.json(
       { error: "Failed to load directory" },

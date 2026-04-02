@@ -63,7 +63,7 @@ export function ProposalDisplay({ proposal }: { proposal: NonNullable<TunerRound
               </div>
               <div className="text-xs text-muted-foreground break-words">{pc.reason}</div>
               <div className="grid grid-cols-2 gap-1 text-[10px] min-w-0">
-                <ExpandableDiffBox content={pc.searchText} variant="removed" title={`${pc.filePath.split("/").pop()} — Before`} />
+                <ExpandableDiffBox content={pc.searchText || pc.originalContent} variant="removed" title={`${pc.filePath.split("/").pop()} — Before`} />
                 <ExpandableDiffBox content={pc.replaceText} variant="added" title={`${pc.filePath.split("/").pop()} — After`} />
               </div>
             </div>
