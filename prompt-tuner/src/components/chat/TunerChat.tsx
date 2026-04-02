@@ -656,7 +656,7 @@ async function executeToolCall(
         const res = await fetch(`/api/files/children?path=${encodeURIComponent(dir)}&limit=200`);
         if (!res.ok) return [];
         const data = await res.json();
-        return (data.children || []) as Child[];
+        return (data.nodes || data.children || []) as Child[];
       };
 
       const topLevel = await listDir(targetDir);
