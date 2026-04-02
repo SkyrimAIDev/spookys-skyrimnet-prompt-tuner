@@ -31,6 +31,7 @@ export function CombinePromptsDialog({ open, onOpenChange }: CombinePromptsDialo
   const [targetName, setTargetName] = useState("");
   const [conflicts, setConflicts] = useState<Conflict[] | null>(null);
   const [resolutions, setResolutions] = useState<Record<string, string>>({});
+  const [showConflictDetails, setShowConflictDetails] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [combining, setCombining] = useState(false);
   const [step, setStep] = useState<"select" | "conflicts" | "name">("select");
@@ -41,6 +42,7 @@ export function CombinePromptsDialog({ open, onOpenChange }: CombinePromptsDialo
     setSelectedSets([]);
     setConflicts(null);
     setResolutions({});
+    setShowConflictDetails(false);
     setTargetName("");
     setStep("select");
     fetch("/api/export/list-sets")
@@ -101,7 +103,7 @@ export function CombinePromptsDialog({ open, onOpenChange }: CombinePromptsDialo
         }
       }
       setResolutions(defaults);
-      setStep(data.conflicts.length > 0 ? "conflicts" : "name");
+      setStep("name"); // Go straight to name — conflicts shown as optional review
     } catch (err) {
       toast.error(`Error: ${(err as Error).message}`);
     } finally {
@@ -209,55 +211,66 @@ export function CombinePromptsDialog({ open, onOpenChange }: CombinePromptsDialo
           </div>
         )}
 
-        {/* Step 2: Conflicts */}
-        {step === "conflicts" && conflicts && conflicts.length > 0 && (
+        {/* Step 2: Name + optional conflict overrides */}
+        {step === "name" && (
           <div className="space-y-3 flex-1 min-h-0 overflow-hidden">
-            <div className="flex items-center gap-2 text-xs text-amber-400">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              {conflicts.length} file{conflicts.length !== 1 ? "s" : ""} exist in multiple sets
+            <div className="space-y-2">
+              <div className="text-[10px] text-muted-foreground font-medium">New set name:</div>
+              <Input
+                value={targetName}
+                onChange={(e) => setTargetName(e.target.value)}
+                placeholder="Combined_Prompts"
+                className="h-7 text-xs"
+                onKeyDown={(e) => { if (e.key === "Enter" && targetName.trim()) handleCombine(); }}
+              />
             </div>
-            <div className="text-[10px] text-muted-foreground">
-              Choose which version to keep for each conflicting file:
-            </div>
-            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-              {conflicts.map((c) => (
-                <div key={c.relativePath} className="rounded border p-2 space-y-1">
-                  <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground">
-                    <FileText className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{c.relativePath}</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {c.existsIn.map((setName) => (
-                      <button
-                        key={setName}
-                        onClick={() => setResolutions((prev) => ({ ...prev, [c.relativePath]: setName }))}
-                        className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
-                          resolutions[c.relativePath] === setName
-                            ? "bg-primary/20 border-primary/40 text-primary"
-                            : "hover:bg-accent/50 border-transparent"
-                        }`}
-                      >
-                        {shortName(setName)}
-                      </button>
+
+            {/* Conflict summary + optional override */}
+            {conflicts && conflicts.length > 0 && (
+              <div className="space-y-1.5">
+                <button
+                  onClick={() => setShowConflictDetails((v) => !v)}
+                  className="flex items-center gap-2 text-xs text-amber-400 hover:text-amber-300 transition-colors w-full text-left"
+                >
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  <span>{conflicts.length} conflicting file{conflicts.length !== 1 ? "s" : ""} — resolved by priority</span>
+                  <span className="ml-auto text-[9px] text-muted-foreground/60 underline">
+                    {showConflictDetails ? "Hide" : "Review & override"}
+                  </span>
+                </button>
+
+                {showConflictDetails && (
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 border rounded p-2">
+                    {conflicts.map((c) => (
+                      <div key={c.relativePath} className="space-y-0.5">
+                        <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground">
+                          <FileText className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{c.relativePath}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1 pl-4">
+                          {c.existsIn.map((setName) => (
+                            <button
+                              key={setName}
+                              onClick={() => setResolutions((prev) => ({ ...prev, [c.relativePath]: setName }))}
+                              className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                                resolutions[c.relativePath] === setName
+                                  ? "bg-primary/20 border-primary/40 text-primary"
+                                  : "hover:bg-accent/50 border-transparent"
+                              }`}
+                            >
+                              {shortName(setName)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Name (also shown when no conflicts) */}
-        {(step === "name" || (step === "conflicts" && conflicts)) && (
-          <div className="space-y-2">
-            <div className="text-[10px] text-muted-foreground font-medium">New set name:</div>
-            <Input
-              value={targetName}
-              onChange={(e) => setTargetName(e.target.value)}
-              placeholder="Combined_Prompts"
-              className="h-7 text-xs"
-              onKeyDown={(e) => { if (e.key === "Enter") handleCombine(); }}
-            />
+                )}
+              </div>
+            )}
+            {conflicts && conflicts.length === 0 && (
+              <div className="text-[10px] text-green-400">No conflicts detected — all files are unique across sets.</div>
+            )}
           </div>
         )}
 
@@ -274,23 +287,13 @@ export function CombinePromptsDialog({ open, onOpenChange }: CombinePromptsDialo
                 disabled={selectedSets.length < 2 || detecting}
               >
                 {detecting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                Next: Detect Conflicts
-              </Button>
-            </>
-          )}
-          {step === "conflicts" && (
-            <>
-              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setStep("select")}>
-                Back
-              </Button>
-              <Button size="sm" className="h-7 text-xs" onClick={() => setStep("name")}>
-                Next: Name & Combine
+                Next
               </Button>
             </>
           )}
           {step === "name" && (
             <>
-              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setStep(conflicts && conflicts.length > 0 ? "conflicts" : "select")}>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setStep("select")}>
                 Back
               </Button>
               <Button
