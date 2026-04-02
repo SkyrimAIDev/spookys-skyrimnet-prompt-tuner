@@ -88,25 +88,52 @@ export async function applyPromptChanges(
     // Empty searchText = full file replacement (or create new file)
     if (!change.searchText || change.searchText.trim() === "") {
       // Try to read existing content for diff display.
-      // First try the temp set (has previous round's edits), then source set, then originals.
+      // Extract the relative path from the file path and try multiple prompt set bases.
       let existingContent = "";
-      const readUrls = [
-        // 1. Try the file directly (temp set — has previous edits)
-        `/api/files/read?path=${encodeURIComponent(change.filePath)}`,
-        // 2. Try with fallbacks for source set and originals
-        `/api/files/read?path=${encodeURIComponent(change.filePath)}${sourceSetName && sourceSetName !== "__tuner_temp__" ? `&fallback=${encodeURIComponent(sourceSetName)}` : ""}&fallback=__original__`,
-      ];
-      for (const url of readUrls) {
+
+      // Extract relative path: find the last known subpath marker
+      const normalizedPath = change.filePath.replace(/\\/g, "/");
+      const markers = ["/prompts/", "/SkyrimNet/prompts/"];
+      let relativePath = "";
+      for (const marker of markers) {
+        const idx = normalizedPath.lastIndexOf(marker);
+        if (idx !== -1) {
+          relativePath = normalizedPath.slice(idx + marker.length);
+          break;
+        }
+      }
+
+      if (relativePath) {
+        // Try reading from: 1) temp set directly, 2) source set via resolve, 3) originals via resolve
+        const setNames = ["__tuner_temp__"];
+        if (sourceSetName && sourceSetName !== "__tuner_temp__") setNames.push(sourceSetName);
+        setNames.push(""); // empty = originals
+
+        for (const setName of setNames) {
+          try {
+            const resolveResp = await fetch(`/api/files/resolve-prompt-set?name=${encodeURIComponent(setName)}`);
+            if (!resolveResp.ok) continue;
+            const { basePath } = await resolveResp.json();
+            const fullPath = `${basePath}/${relativePath}`.replace(/\\/g, "/");
+            const readResp = await fetch(`/api/files/read?path=${encodeURIComponent(fullPath)}`);
+            if (readResp.ok) {
+              const data = await readResp.json();
+              if (data.content) {
+                existingContent = data.content;
+                break;
+              }
+            }
+          } catch { /* try next */ }
+        }
+      } else {
+        // Fallback: try the path directly
         try {
-          const readResp = await fetch(url);
+          const readResp = await fetch(`/api/files/read?path=${encodeURIComponent(change.filePath)}`);
           if (readResp.ok) {
             const data = await readResp.json();
-            if (data.content) {
-              existingContent = data.content;
-              break;
-            }
+            existingContent = data.content || "";
           }
-        } catch { /* try next */ }
+        } catch { /* ignore */ }
       }
 
       const writeResp = await fetch("/api/files/write", {
