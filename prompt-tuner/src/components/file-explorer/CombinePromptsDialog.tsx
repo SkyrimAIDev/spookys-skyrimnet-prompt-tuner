@@ -230,7 +230,7 @@ export function CombinePromptsDialog({ open, onOpenChange }: CombinePromptsDialo
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 text-xs text-amber-400">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                  <span>{conflicts.length} conflict{conflicts.length !== 1 ? "s" : ""} will be resolved by priority</span>
+                  <span>{conflicts.length} conflict{conflicts.length !== 1 ? "s" : ""} {showConflictDetails ? "— manually resolving" : "will be resolved by priority"}</span>
                 </div>
                 <Button
                   variant="outline"
