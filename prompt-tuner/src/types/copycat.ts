@@ -16,6 +16,8 @@ export type CopycatPhase =
 
 export interface CopycatDialogueTurn {
   label: string;
+  /** The input dialogue line that prompted this response */
+  inputContent?: string;
   messages: ChatMessage[];
   response: string;
   latencyMs?: number;

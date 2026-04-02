@@ -102,6 +102,7 @@ async function runDialogue(
 
     const turnResult: CopycatDialogueTurn = {
       label: `Turn ${turnIdx + 1}: ${turn.inputSpeaker} → ${respondingNpc?.displayName || "NPC"}`,
+      inputContent: turn.inputContent,
       messages: [...messages],
       response: log.response,
       latencyMs: log.latencyMs,

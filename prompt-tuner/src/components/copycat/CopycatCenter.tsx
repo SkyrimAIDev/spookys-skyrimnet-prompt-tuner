@@ -648,6 +648,11 @@ function CopycatRoundCard({
                 return (
                   <div key={i} className="space-y-1 min-w-0">
                     <div className="text-[10px] font-medium text-muted-foreground">{refTurn.label}</div>
+                    {refTurn.inputContent && (
+                      <div className="text-xs text-muted-foreground bg-muted/30 rounded px-2 py-1 italic break-words">
+                        &ldquo;{refTurn.inputContent}&rdquo;
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-1 min-w-0">
                       <div className="rounded bg-blue-500/5 p-2 min-w-0 overflow-hidden">
                         <div className="text-[9px] font-medium text-blue-400 mb-0.5 truncate" title={referenceModelId}>
@@ -738,6 +743,11 @@ function DialogueTurns({
           <div className={`text-[10px] font-medium uppercase tracking-wider ${colorClass}`}>
             {turn.label}
           </div>
+          {turn.inputContent && (
+            <div className="text-xs text-muted-foreground bg-muted/30 rounded px-2 py-1 italic break-words">
+              &ldquo;{turn.inputContent}&rdquo;
+            </div>
+          )}
           <pre className={`whitespace-pre-wrap break-words text-xs ${bgClass} rounded p-2 max-h-48 overflow-auto`}>
             {turn.response || "(no response)"}
           </pre>
