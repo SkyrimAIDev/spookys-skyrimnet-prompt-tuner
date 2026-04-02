@@ -59,12 +59,12 @@ export function ProposalDisplay({ proposal }: { proposal: NonNullable<TunerRound
           {proposal.promptChanges.map((pc, i) => (
             <div key={i} className="rounded border p-2 space-y-1 min-w-0 overflow-hidden">
               <div className="text-[10px] font-mono text-muted-foreground truncate" title={pc.filePath}>
-                {pc.filePath.split("/").slice(-2).join("/")}
+                {pc.filePath.replace(/\\/g, "/").split("/").slice(-2).join("/")}
               </div>
               <div className="text-xs text-muted-foreground break-words">{pc.reason}</div>
               <div className="grid grid-cols-2 gap-1 text-[10px] min-w-0">
-                <ExpandableDiffBox content={pc.searchText || pc.originalContent} variant="removed" title={`${pc.filePath.split("/").pop()} — Before`} />
-                <ExpandableDiffBox content={pc.replaceText} variant="added" title={`${pc.filePath.split("/").pop()} — After`} />
+                <ExpandableDiffBox content={pc.searchText || pc.originalContent} variant="removed" title={`${pc.filePath.replace(/\\/g, "/").split("/").pop()} — Before`} />
+                <ExpandableDiffBox content={pc.replaceText} variant="added" title={`${pc.filePath.replace(/\\/g, "/").split("/").pop()} — After`} />
               </div>
             </div>
           ))}
