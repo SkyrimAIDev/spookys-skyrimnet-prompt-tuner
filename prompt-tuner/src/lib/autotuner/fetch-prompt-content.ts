@@ -216,6 +216,7 @@ export async function fetchPromptContent(
   let basePath: string;
   try {
     basePath = await resolveBasePath(promptSetName);
+    console.log(`[fetchPromptContent] basePath="${basePath}" for set="${promptSetName}"`);
   } catch {
     console.error(`[fetchPromptContent] Could not resolve prompt set "${promptSetName}"`);
     return { content: "", files: [] };
@@ -223,6 +224,7 @@ export async function fetchPromptContent(
 
   // Build fallback chain: active prompt set first, then originals
   const fallbackBasePaths: string[] = [];
+  console.log(`[fetchPromptContent] promptSetName="${promptSetName}" fallbackSetName="${fallbackSetName}"`);
   if (promptSetName) {
     if (fallbackSetName) {
       try {
@@ -367,5 +369,10 @@ export async function fetchPromptContent(
     sections.push(`\n... (additional files truncated for context)`);
   }
 
+  console.log(`[fetchPromptContent] Found ${allFiles.length} files, ${allFiles.filter(f => f.content.length > 0).length} with content, total ${totalLength} chars`);
+  if (allFiles.length > 0 && allFiles.every(f => f.content.length === 0)) {
+    console.warn(`[fetchPromptContent] ALL files have empty content! Paths: ${allFiles.map(f => f.path).join(", ")}`);
+    console.warn(`[fetchPromptContent] fallbackBasePaths: ${fallbackBasePaths.join(", ")}`);
+  }
   return { content: sections.join("\n\n"), files: allFiles };
 }

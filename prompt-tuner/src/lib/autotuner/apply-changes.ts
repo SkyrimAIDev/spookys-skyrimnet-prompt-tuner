@@ -87,20 +87,27 @@ export async function applyPromptChanges(
   for (const change of changes) {
     // Empty searchText = full file replacement (or create new file)
     if (!change.searchText || change.searchText.trim() === "") {
-      // Try to read existing content for diff display
+      // Try to read existing content for diff display.
+      // First try the temp set (has previous round's edits), then source set, then originals.
       let existingContent = "";
-      try {
-        let readUrl = `/api/files/read?path=${encodeURIComponent(change.filePath)}`;
-        if (sourceSetName && sourceSetName !== "__tuner_temp__") {
-          readUrl += `&fallback=${encodeURIComponent(sourceSetName)}`;
-        }
-        readUrl += `&fallback=__original__`;
-        const readResp = await fetch(readUrl);
-        if (readResp.ok) {
-          const data = await readResp.json();
-          existingContent = data.content || "";
-        }
-      } catch { /* new file, no original */ }
+      const readUrls = [
+        // 1. Try the file directly (temp set — has previous edits)
+        `/api/files/read?path=${encodeURIComponent(change.filePath)}`,
+        // 2. Try with fallbacks for source set and originals
+        `/api/files/read?path=${encodeURIComponent(change.filePath)}${sourceSetName && sourceSetName !== "__tuner_temp__" ? `&fallback=${encodeURIComponent(sourceSetName)}` : ""}&fallback=__original__`,
+      ];
+      for (const url of readUrls) {
+        try {
+          const readResp = await fetch(url);
+          if (readResp.ok) {
+            const data = await readResp.json();
+            if (data.content) {
+              existingContent = data.content;
+              break;
+            }
+          }
+        } catch { /* try next */ }
+      }
 
       const writeResp = await fetch("/api/files/write", {
         method: "POST",
