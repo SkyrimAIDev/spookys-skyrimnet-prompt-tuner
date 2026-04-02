@@ -87,13 +87,11 @@ export async function applyPromptChanges(
   for (const change of changes) {
     // Empty searchText = full file replacement (or create new file)
     if (!change.searchText || change.searchText.trim() === "") {
-      // Try to read existing content for diff display.
-      // Extract the relative path from the file path and try multiple prompt set bases.
+      // Read existing content for diff display using the set-aware endpoint.
+      // Extract the relative prompt path from the absolute file path.
       let existingContent = "";
-
-      // Extract relative path: find the last known subpath marker
       const normalizedPath = change.filePath.replace(/\\/g, "/");
-      const markers = ["/prompts/", "/SkyrimNet/prompts/"];
+      const markers = ["/SkyrimNet/prompts/", "/prompts/"];
       let relativePath = "";
       for (const marker of markers) {
         const idx = normalizedPath.lastIndexOf(marker);
@@ -104,36 +102,25 @@ export async function applyPromptChanges(
       }
 
       if (relativePath) {
-        // Try reading from: 1) temp set directly, 2) source set via resolve, 3) originals via resolve
-        const setNames = ["__tuner_temp__"];
-        if (sourceSetName && sourceSetName !== "__tuner_temp__") setNames.push(sourceSetName);
-        setNames.push(""); // empty = originals
+        const fallbackSets: string[] = [];
+        if (sourceSetName && sourceSetName !== "__tuner_temp__") fallbackSets.push(sourceSetName);
+        fallbackSets.push("__original__");
 
-        for (const setName of setNames) {
-          try {
-            const resolveResp = await fetch(`/api/files/resolve-prompt-set?name=${encodeURIComponent(setName)}`);
-            if (!resolveResp.ok) continue;
-            const { basePath } = await resolveResp.json();
-            const fullPath = `${basePath}/${relativePath}`.replace(/\\/g, "/");
-            const readResp = await fetch(`/api/files/read?path=${encodeURIComponent(fullPath)}`);
-            if (readResp.ok) {
-              const data = await readResp.json();
-              if (data.content) {
-                existingContent = data.content;
-                break;
-              }
-            }
-          } catch { /* try next */ }
-        }
-      } else {
-        // Fallback: try the path directly
         try {
-          const readResp = await fetch(`/api/files/read?path=${encodeURIComponent(change.filePath)}`);
-          if (readResp.ok) {
-            const data = await readResp.json();
+          const resp = await fetch("/api/files/read-prompt", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              relativePath,
+              promptSet: "__tuner_temp__",
+              fallbackSets,
+            }),
+          });
+          if (resp.ok) {
+            const data = await resp.json();
             existingContent = data.content || "";
           }
-        } catch { /* ignore */ }
+        } catch { /* non-critical — diff display only */ }
       }
 
       const writeResp = await fetch("/api/files/write", {
