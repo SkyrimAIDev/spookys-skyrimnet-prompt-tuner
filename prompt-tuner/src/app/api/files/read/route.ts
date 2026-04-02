@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
-import { isPathAllowed, isReadOnly, ORIGINAL_PROMPTS_DIR } from "@/lib/files/paths";
+import { isPathAllowed, isReadOnly, ORIGINAL_PROMPTS_DIR, EDITED_PROMPTS_DIR } from "@/lib/files/paths";
 import { resolvePromptSetBaseServer } from "@/lib/files/paths-server";
 
 export async function GET(request: NextRequest) {
@@ -37,12 +37,49 @@ export async function GET(request: NextRequest) {
   // We try each fallback set in order, resolving the same relative path within it.
   const normalizedFilePath = filePath.replace(/\\/g, "/");
 
-  // Build candidate base paths to strip (temp set, then edited-prompts root)
-  const tempBase = resolvePromptSetBaseServer("__tuner_temp__").replace(/\\/g, "/").replace(/\/$/, "");
-
+  // Try to extract the relative prompt path by stripping known base paths.
+  // We try temp set, edited-prompts sets, and originals — whichever matches.
   let relativePath: string | null = null;
-  if (normalizedFilePath.startsWith(tempBase + "/")) {
-    relativePath = normalizedFilePath.slice(tempBase.length + 1);
+
+  const candidateBases = [
+    resolvePromptSetBaseServer("__tuner_temp__"),
+    ORIGINAL_PROMPTS_DIR,
+  ];
+  // Also try each fallback set as a potential base to strip
+  for (const setName of fallbackSets) {
+    if (setName && setName !== "__original__") {
+      try { candidateBases.push(resolvePromptSetBaseServer(setName)); } catch {}
+    }
+  }
+  // Try the edited-prompts root with various subdirectory patterns
+  const editedBase = EDITED_PROMPTS_DIR.replace(/\\/g, "/");
+
+  for (const base of candidateBases) {
+    const normalizedBase = base.replace(/\\/g, "/").replace(/\/$/, "");
+    if (normalizedFilePath.startsWith(normalizedBase + "/")) {
+      relativePath = normalizedFilePath.slice(normalizedBase.length + 1);
+      break;
+    }
+  }
+
+  // Last resort: try to extract relative path from edited-prompts root
+  // (handles any set name in the path: edited-prompts/{setName}/SKSE/.../prompts/{relative})
+  if (!relativePath && normalizedFilePath.includes(editedBase)) {
+    const afterEdited = normalizedFilePath.slice(normalizedFilePath.indexOf(editedBase) + editedBase.length + 1);
+    // Strip set name and MO2 path: {setName}/SKSE/Plugins/SkyrimNet/prompts/{relative}
+    const mo2Marker = "/SKSE/Plugins/SkyrimNet/prompts/";
+    const mo2Idx = afterEdited.indexOf(mo2Marker.slice(1)); // without leading /
+    if (mo2Idx !== -1) {
+      relativePath = afterEdited.slice(mo2Idx + mo2Marker.length - 1);
+    }
+    // Also try legacy: {setName}/prompts/{relative}
+    if (!relativePath) {
+      const legacyMarker = "/prompts/";
+      const legacyIdx = afterEdited.indexOf(legacyMarker.slice(1));
+      if (legacyIdx !== -1) {
+        relativePath = afterEdited.slice(legacyIdx + legacyMarker.length - 1);
+      }
+    }
   }
 
   if (!relativePath) {
