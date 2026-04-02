@@ -177,7 +177,7 @@ async function tryListPromptFiles(dirPath: string): Promise<FileEntry[]> {
     const resp = await fetch(`/api/files/children?path=${encodeURIComponent(dirPath)}&limit=50`);
     if (!resp.ok) return [];
     const data = await resp.json();
-    return (data.children || [])
+    return (data.nodes || data.children || [])
       .filter((e: FileEntry) => e.type === "file" && e.name.endsWith(".prompt"))
       .sort((a: FileEntry, b: FileEntry) => a.name.localeCompare(b.name));
   } catch {
