@@ -23,23 +23,33 @@ export async function POST(request: NextRequest) {
 
     const safeName = targetSetName.replace(/[^a-zA-Z0-9._-]/g, "_");
 
-    // Compute relative path from whichever base the source belongs to
-    const normalizedSource = sourcePath.replace(/\\/g, "/");
-    const normalizedOriginal = ORIGINAL_PROMPTS_DIR.replace(/\\/g, "/");
-    const normalizedEdited = EDITED_PROMPTS_DIR.replace(/\\/g, "/");
+    // Compute relative path from whichever base the source belongs to.
+    // Use path.relative so case-insensitive Windows filesystems and mixed
+    // separators are handled correctly.
+    const resolvedSource = path.resolve(sourcePath);
+    // Returns "" when source IS the base (whole-folder copy), null when outside.
+    const isUnder = (base: string): string | null => {
+      const rel = path.relative(base, resolvedSource);
+      if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
+      return rel;
+    };
 
     let relativePath: string | null = null;
 
-    if (normalizedSource.startsWith(normalizedOriginal + "/")) {
-      relativePath = normalizedSource.slice(normalizedOriginal.length + 1);
-    } else if (normalizedSource.startsWith(normalizedEdited + "/")) {
+    const relFromOriginal = isUnder(ORIGINAL_PROMPTS_DIR);
+    const relFromEdited = isUnder(EDITED_PROMPTS_DIR);
+
+    if (relFromOriginal !== null) {
+      relativePath = relFromOriginal.replace(/\\/g, "/");
+    } else if (relFromEdited !== null) {
       // Strip "{setName}/..." prefix variants (legacy "prompts/..." or MO2 "SKSE/...")
-      const afterEdited = normalizedSource.slice(normalizedEdited.length + 1);
-      // Remove the set name segment at the front
+      const afterEdited = relFromEdited.replace(/\\/g, "/");
       const slashIdx = afterEdited.indexOf("/");
-      if (slashIdx !== -1) {
+      if (slashIdx === -1) {
+        // Source is the set root itself — copy whole prompts dir
+        relativePath = "";
+      } else {
         const afterSet = afterEdited.slice(slashIdx + 1);
-        // Strip MO2 subpath prefix if present
         const mo2Prefix = MO2_PROMPTS_SUBPATH.replace(/\\/g, "/") + "/";
         if (afterSet.startsWith(mo2Prefix)) {
           relativePath = afterSet.slice(mo2Prefix.length);
@@ -51,7 +61,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!relativePath) {
+    if (relativePath === null) {
       return NextResponse.json({ error: "Cannot determine relative path for source file" }, { status: 400 });
     }
 
@@ -71,8 +81,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Access denied for destination" }, { status: 403 });
     }
 
-    await fs.mkdir(path.dirname(destPath), { recursive: true });
-    await fs.copyFile(sourcePath, destPath);
+    // Recursively copy directories, single-file copy otherwise
+    const stat = await fs.stat(resolvedSource);
+    if (stat.isDirectory()) {
+      await fs.mkdir(destPath, { recursive: true });
+      await fs.cp(resolvedSource, destPath, { recursive: true });
+    } else {
+      await fs.mkdir(path.dirname(destPath), { recursive: true });
+      await fs.copyFile(resolvedSource, destPath);
+    }
 
     return NextResponse.json({ success: true, destPath });
   } catch (error) {

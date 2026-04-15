@@ -206,6 +206,7 @@ function PostTuningChatInput() {
           workingSettings: useAutoTunerStore.getState().workingSettings,
           setWorkingSettings: (s: AiTuningSettings) => useAutoTunerStore.getState().setWorkingSettings(s),
           sourceSetName: useAutoTunerStore.getState().selectedPromptSet || undefined,
+          modifiedFiles: [...modifiedPaths],
         };
 
         for (const call of toolCalls) {

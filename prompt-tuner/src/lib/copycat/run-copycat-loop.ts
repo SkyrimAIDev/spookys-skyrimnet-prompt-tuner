@@ -6,7 +6,7 @@ import type { CopycatDialogueTurn } from "@/types/copycat";
 import { buildMultiTurnRenderBody, getDefaultScenario, resolveScenarioNpcs } from "@/lib/benchmark/default-scenarios";
 import { buildCopycatMessages } from "./build-copycat-prompt";
 import { parseCopycatResponse } from "./parse-copycat-response";
-import { applySettingsChanges, applyPromptChanges } from "@/lib/autotuner/apply-changes";
+import { applySettingsChanges, applyPromptChanges, prefetchOriginalContent } from "@/lib/autotuner/apply-changes";
 import { enforcePromptEditingMode } from "@/lib/autotuner/prompt-editing-modes";
 import { fetchPromptContent } from "@/lib/autotuner/fetch-prompt-content";
 import { createTunerTempSet, deleteTunerTempSet, TUNER_TEMP_SET } from "@/lib/autotuner/save-results";
@@ -293,10 +293,14 @@ export async function runCopycatLoop(params: CopycatLoopParams) {
       store.clearStreams();
 
       let promptContent = "";
+      let fileMenu: string[] = [];
       if (tuningTarget === "prompts" || tuningTarget === "both") {
         // Falls back to the source (active) set for files not yet in the temp set
         const fetched = await fetchPromptContent("dialogue", workingPromptSet || "", sourceSetName || "", activeScenario.npcs);
         promptContent = fetched.content;
+        fileMenu = fetched.files
+          .filter((f) => f.editability !== "DO_NOT_EDIT")
+          .map((f) => f.relativePath);
       }
 
       const previousRounds = useCopycatStore.getState().rounds.slice(0, roundIdx);
@@ -309,6 +313,7 @@ export async function runCopycatLoop(params: CopycatLoopParams) {
           currentSettings: workingSettings,
           originalSettings,
           promptContent,
+          fileMenu,
           referenceDialogue: frozenReference,
           targetDialogue,
           previousRounds,
@@ -331,6 +336,17 @@ export async function runCopycatLoop(params: CopycatLoopParams) {
         }
 
         const parsed = parseCopycatResponse(copycatLog.response);
+
+        // Pre-fetch existing prompt content so the diff UI can render the
+        // left panel immediately, before applyPromptChanges() finishes.
+        if (parsed.proposal.promptChanges.length > 0) {
+          try {
+            parsed.proposal.promptChanges = await prefetchOriginalContent(
+              parsed.proposal.promptChanges,
+              sourceSetName,
+            );
+          } catch { /* best-effort */ }
+        }
 
         store.setRoundComparison(roundIdx, parsed.comparison);
         store.setRoundEffectivenessScore(roundIdx, parsed.effectivenessScore);
@@ -369,7 +385,7 @@ export async function runCopycatLoop(params: CopycatLoopParams) {
 
           for (let retry = 0; retry <= MAX_REDIRECT_RETRIES; retry++) {
             const { allowed, rejected } = enforcePromptEditingMode(
-              pendingChanges, mode, "dialogue", customPromptPaths,
+              pendingChanges, mode, "dialogue", customPromptPaths, fileMenu,
             );
 
             if (allowed.length > 0 && !tempSetCreated) {
@@ -392,19 +408,24 @@ export async function runCopycatLoop(params: CopycatLoopParams) {
 
             store.setStatusMessage(`Redirecting ${rejected.length} blocked change${rejected.length !== 1 ? "s" : ""} to allowed files...`);
 
-            const allowedFileNames = (mode === "recommended"
-              ? (await import("@/lib/autotuner/prompt-editing-modes")).RECOMMENDED_PROMPTS.dialogue
+            const recPrompts = (await import("@/lib/autotuner/prompt-editing-modes")).RECOMMENDED_PROMPTS;
+            const allowedPaths = mode === "recommended"
+              ? (recPrompts.dialogue || [])
               : mode === "world_settings"
                 ? ["submodules/system_head/0010_setting.prompt"]
-                : customPromptPaths
-            )?.map((p) => p.split("/").pop()) || [];
+                : mode === "custom"
+                  ? (customPromptPaths || [])
+                  : fileMenu;
 
-            const redirectPrompt = `The following prompt changes were BLOCKED because they target files outside your allowed list. You may ONLY edit: ${allowedFileNames.join(", ")}.
+            const redirectPrompt = `The following prompt changes were BLOCKED because their \`file_path\` did not match the allowed file list:
 
-Blocked changes that need to be redirected:
-${rejected.map((c) => `- Tried to ${c.searchText ? "edit" : "create"} "${c.filePath.split("/").pop()}": ${c.reason}`).join("\n")}
+${rejected.map((c) => `- "${c.filePath}" — ${c.reason}`).join("\n")}
 
-Please propose new prompt_changes that incorporate the SAME improvements into the ALLOWED files listed above. Respond with the same JSON format.`;
+The \`file_path\` field in every prompt_changes entry MUST be a verbatim copy of one of these canonical relative paths:
+
+${allowedPaths.map((p) => `- \`${p}\``).join("\n")}
+
+Please propose new prompt_changes that incorporate the SAME improvements using one of the allowed paths above. Respond with the same JSON format.`;
 
             try {
               const redirectMessages: import("@/types/llm").ChatMessage[] = [

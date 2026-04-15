@@ -17,6 +17,7 @@ import {
   Zap,
   Wrench,
   Loader2,
+  Bug,
 } from "lucide-react";
 import {
   Tooltip,
@@ -142,6 +143,26 @@ export function Toolbar() {
             <DropdownMenuItem onClick={() => setCreateYamlDialogOpen(true, "trigger")} className="text-xs gap-2">
               <Zap className="h-3.5 w-3.5" />
               Create Custom Trigger
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={async () => {
+                try {
+                  const resp = await fetch("/api/debug/log");
+                  const { path: logPath } = await resp.json();
+                  await fetch("/api/files/open-location", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ filePath: logPath }),
+                  });
+                  toast.success(`Debug log: ${logPath}`);
+                } catch (err) {
+                  toast.error(`Failed to reveal log: ${(err as Error).message}`);
+                }
+              }}
+              className="text-xs gap-2"
+            >
+              <Bug className="h-3.5 w-3.5" />
+              Reveal Debug Log
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

@@ -40,7 +40,7 @@ function loadPersisted(): {
     lockedSettings: ["maxTokens", "allowReasoning", "reasoningEffort", "structuredOutputs", "stopSequences"] as (keyof AiTuningSettingsType)[],
     customInstructions: "",
     ignoreFormatScoring: true,
-    isNarrationEnabled: true,
+    isNarrationEnabled: false,
   };
   if (typeof window === "undefined") return defaults;
   try {
@@ -59,7 +59,7 @@ function loadPersisted(): {
         lockedSettings: data.lockedSettings ?? ["maxTokens", "allowReasoning", "reasoningEffort"],
         customInstructions: data.customInstructions ?? "",
         ignoreFormatScoring: data.ignoreFormatScoring ?? true,
-        isNarrationEnabled: data.isNarrationEnabled ?? true,
+        isNarrationEnabled: data.isNarrationEnabled ?? false,
       };
     }
   } catch { /* ignore */ }

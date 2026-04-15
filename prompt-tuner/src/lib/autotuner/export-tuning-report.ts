@@ -27,6 +27,16 @@ function collapseBlankLines(text: string): string {
   return stripped.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/**
+ * Pick a backtick fence longer than any backtick run inside `content`, so
+ * embedded ``` blocks (common in prompts/responses with markdown examples)
+ * don't close the wrapper early.
+ */
+function fenceFor(content: string): string {
+  const longest = (content.match(/`+/g) || []).reduce((m, s) => Math.max(m, s.length), 0);
+  return "`".repeat(Math.max(3, longest + 1));
+}
+
 export function buildTuningReport(params: ExportParams): string {
   const {
     category,
@@ -117,9 +127,12 @@ export function buildTuningReport(params: ExportParams): string {
       formatMessages(benchResult.messages, lines);
       push(`**Response:**`);
       push("");
-      push("```");
-      push(benchResult.response);
-      push("```");
+      {
+        const f = fenceFor(benchResult.response);
+        push(f);
+        push(benchResult.response);
+        push(f);
+      }
       push("");
       push(
         `*${benchResult.latencyMs}ms · ` +
@@ -143,9 +156,13 @@ export function buildTuningReport(params: ExportParams): string {
       }
       push(`#### Output`);
       push("");
-      push("````");
-      push(collapseBlankLines(benchResult.explanation));
-      push("````");
+      {
+        const c = collapseBlankLines(benchResult.explanation);
+        const f = fenceFor(c);
+        push(f);
+        push(c);
+        push(f);
+      }
       push("");
     }
 
@@ -162,9 +179,13 @@ export function buildTuningReport(params: ExportParams): string {
       }
       push(`#### Output`);
       push("");
-      push("````");
-      push(collapseBlankLines(round.assessmentText));
-      push("````");
+      {
+        const c = collapseBlankLines(round.assessmentText);
+        const f = fenceFor(c);
+        push(f);
+        push(c);
+        push(f);
+      }
       push("");
     }
 
@@ -207,9 +228,13 @@ function formatMessages(messages: ChatMessage[], lines: string[]) {
     // Wrap in code block to preserve the exact text the LLM received —
     // message content contains markdown-like syntax (##, **, -, etc.)
     // that would be rendered/transformed if left as raw markdown.
-    lines.push("````");
-    lines.push(collapseBlankLines(msg.content));
-    lines.push("````");
+    {
+      const c = collapseBlankLines(msg.content);
+      const f = fenceFor(c);
+      lines.push(f);
+      lines.push(c);
+      lines.push(f);
+    }
     lines.push("");
   }
 }
@@ -224,9 +249,12 @@ function formatSubtaskSection(turn: TunerTurnResult, lines: string[]) {
   // Response
   lines.push(`**Response:**`);
   lines.push("");
-  lines.push("```");
-  lines.push(turn.response);
-  lines.push("```");
+  {
+    const f = fenceFor(turn.response);
+    lines.push(f);
+    lines.push(turn.response);
+    lines.push(f);
+  }
   lines.push("");
 
   // Per-subtask stats
@@ -241,9 +269,13 @@ function formatSubtaskSection(turn: TunerTurnResult, lines: string[]) {
 function formatProposalContent(proposal: TunerProposal, proposalRaw: string, lines: string[]) {
   // Show the raw LLM response in a code fence first
   if (proposalRaw) {
-    lines.push("````");
-    lines.push(collapseBlankLines(proposalRaw));
-    lines.push("````");
+    {
+      const c = collapseBlankLines(proposalRaw);
+      const f = fenceFor(c);
+      lines.push(f);
+      lines.push(c);
+      lines.push(f);
+    }
     lines.push("");
   }
 
@@ -286,14 +318,21 @@ function formatProposalContent(proposal: TunerProposal, proposalRaw: string, lin
     for (const pc of proposal.promptChanges) {
       lines.push(`*${pc.filePath}* — ${pc.reason}`);
       lines.push("");
-      lines.push("```diff");
-      for (const line of pc.searchText.split("\n")) {
-        lines.push(`- ${line}`);
+      {
+        // Full-file replacement: show original on the "-" side and new content
+        // on the "+" side. originalContent is set by prefetchOriginalContent
+        // before applyPromptChanges runs.
+        const original = pc.originalContent || "";
+        const replacement = pc.replaceText || "";
+        const diffBody =
+          original.split("\n").map((l) => `- ${l}`).join("\n") +
+          (original ? "\n" : "") +
+          replacement.split("\n").map((l) => `+ ${l}`).join("\n");
+        const f = fenceFor(diffBody);
+        lines.push(`${f}diff`);
+        lines.push(diffBody);
+        lines.push(f);
       }
-      for (const line of pc.replaceText.split("\n")) {
-        lines.push(`+ ${line}`);
-      }
-      lines.push("```");
       lines.push("");
     }
   }

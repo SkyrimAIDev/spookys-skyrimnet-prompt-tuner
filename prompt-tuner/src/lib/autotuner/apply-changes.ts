@@ -2,9 +2,11 @@ import type { AiTuningSettings } from "@/types/config";
 import type { SettingsChange, PromptChange } from "@/types/autotuner";
 import { normalizeParamKey } from "@/lib/constants/param-aliases";
 
+// ─── Settings ────────────────────────────────────────────────────────────────
+
 /**
- * Apply settings changes to a copy of the working settings.
- * Returns a new AiTuningSettings object (does not mutate).
+ * Apply settings changes to a copy of the working settings. Returns a new
+ * AiTuningSettings object — does not mutate the input.
  */
 export function applySettingsChanges(
   current: AiTuningSettings,
@@ -34,170 +36,139 @@ export function applySettingsChanges(
   return result;
 }
 
+// ─── Path resolution (no LLM parsing) ────────────────────────────────────────
+
 /**
- * Escape special regex characters in a string.
+ * Resolve the temp set's writable absolute base path. Cached per-call so
+ * applyPromptChanges and prefetchOriginalContent only hit the API once.
  */
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+async function resolveTempBase(): Promise<string | null> {
+  try {
+    const resp = await fetch(`/api/files/resolve-prompt-set?name=${encodeURIComponent("__tuner_temp__")}`);
+    if (!resp.ok) return null;
+    const { basePath } = await resp.json();
+    return (basePath as string).replace(/\\/g, "/");
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Normalize quote characters: smart/curly quotes → straight quotes,
- * em/en dashes → hyphens, and other common LLM character substitutions.
+ * Read existing file content via the set-aware /api/files/read-prompt
+ * endpoint, falling back through temp set → source set → originals so the
+ * diff display always shows the prior state of the file.
  */
-function normalizeQuotes(s: string): string {
-  return s
-    .replace(/[\u2018\u2019\u201A\u2039\u203A]/g, "'")  // smart single quotes
-    .replace(/[\u201C\u201D\u201E\u00AB\u00BB]/g, '"')   // smart double quotes
-    .replace(/[\u2013\u2014]/g, "-")                       // em/en dash → hyphen
-    .replace(/\u2026/g, "...");                             // ellipsis character
+async function fetchExistingContent(
+  relativePath: string,
+  sourceSetName: string | undefined,
+): Promise<string> {
+  const fallbackSets: string[] = [];
+  if (sourceSetName && sourceSetName !== "__tuner_temp__") fallbackSets.push(sourceSetName);
+  fallbackSets.push("__original__");
+  try {
+    const resp = await fetch("/api/files/read-prompt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        relativePath,
+        promptSet: "__tuner_temp__",
+        fallbackSets,
+      }),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      await debugLog("fetchExisting:result", {
+        relativePath,
+        resolvedFrom: data.resolvedFrom,
+        contentLen: (data.content || "").length,
+      });
+      return data.content || "";
+    }
+    await debugLog("fetchExisting:notFound", { relativePath, status: resp.status });
+  } catch (err) {
+    await debugLog("fetchExisting:exception", { relativePath, err: (err as Error).message });
+  }
+  return "";
 }
 
 /**
- * Build a regex from search text that allows flexible whitespace matching.
- * Splits the text into non-whitespace tokens and joins them with \s+ patterns,
- * so "foo  bar\nbaz" matches "foo bar\n  baz" etc.
- */
-function buildFlexibleRegex(searchText: string, caseInsensitive = false): RegExp | null {
-  const tokens = searchText.split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return null;
-  const pattern = tokens.map(escapeRegex).join("\\s+");
-  return new RegExp(pattern, caseInsensitive ? "si" : "s");
-}
-
-/**
- * Apply prompt changes by writing modified files via the API.
- * Each change is a search/replace within a file.
- * Tries exact match first, then falls back to flexible whitespace matching.
+ * Pre-populate `originalContent` on each change so the diff UI can render
+ * the left panel immediately, before applyPromptChanges() finishes its
+ * write loop. Returns a new array — does not mutate the input.
  *
- * @param changes - The proposed prompt changes to apply.
- * @param sourceSetName - Optional: name of the original source prompt set the temp set
- *   was derived from. When a file doesn't exist in the temp set yet (because the temp
- *   set is now empty by default), it is seeded from this set, falling back to the
- *   original prompts if the source set doesn't have it either.
+ * Assumes change.filePath is already a canonical relative path (validated
+ * upstream by enforcePromptEditingMode).
+ */
+export async function prefetchOriginalContent(
+  changes: PromptChange[],
+  sourceSetName?: string,
+): Promise<PromptChange[]> {
+  const out: PromptChange[] = [];
+  for (const c of changes) {
+    const originalContent = await fetchExistingContent(c.filePath, sourceSetName);
+    out.push({ ...c, originalContent });
+  }
+  return out;
+}
+
+// ─── Apply ───────────────────────────────────────────────────────────────────
+
+/**
+ * Apply prompt changes by writing each modified file via the API.
  *
- * Returns the changes with originalContent and modifiedContent filled in.
+ * Contract:
+ * - Every change.filePath MUST be a canonical relative path (e.g.
+ *   "submodules/system_head/0010_setting.prompt"). Validation happens
+ *   upstream in enforcePromptEditingMode.
+ * - Every change is a full-file replacement: searchText is ignored.
+ * - The function reads each file's prior content for the diff display, then
+ *   writes change.replaceText to the temp set.
+ *
+ * @param changes        Pre-validated changes to apply.
+ * @param sourceSetName  Active set name — used as a fallback when reading
+ *                       the prior content for the diff display.
  */
 export async function applyPromptChanges(
   changes: PromptChange[],
   sourceSetName?: string,
 ): Promise<PromptChange[]> {
   const applied: PromptChange[] = [];
+  const tempBase = await resolveTempBase();
+  await debugLog("applyPromptChanges:start", {
+    changeCount: changes.length,
+    sourceSetName,
+    tempBase,
+  });
+
+  if (!tempBase) {
+    // No writable target — surface this clearly so the report explains the failure.
+    return changes.map((c) => ({
+      ...c,
+      modifiedContent: "",
+      reason: `[SKIPPED] Could not resolve temp tuner set. ${c.reason}`,
+    }));
+  }
 
   for (const change of changes) {
-    // Empty searchText = full file replacement (or create new file)
-    if (!change.searchText || change.searchText.trim() === "") {
-      // Read existing content for diff display using the set-aware endpoint.
-      // Extract the relative prompt path from the absolute file path.
-      let existingContent = "";
-      const normalizedPath = change.filePath.replace(/\\/g, "/");
-      const markers = ["/SkyrimNet/prompts/", "/prompts/"];
-      let relativePath = "";
-      for (const marker of markers) {
-        const idx = normalizedPath.lastIndexOf(marker);
-        if (idx !== -1) {
-          relativePath = normalizedPath.slice(idx + marker.length);
-          break;
-        }
-      }
+    const relativePath = change.filePath;
+    const absolutePath = `${tempBase}/${relativePath}`;
+    await debugLog("change:start", { relativePath, absolutePath, replaceTextLen: change.replaceText?.length ?? 0 });
 
-      if (relativePath) {
-        const fallbackSets: string[] = [];
-        if (sourceSetName && sourceSetName !== "__tuner_temp__") fallbackSets.push(sourceSetName);
-        fallbackSets.push("__original__");
+    const existingContent = await fetchExistingContent(relativePath, sourceSetName);
 
-        try {
-          const resp = await fetch("/api/files/read-prompt", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              relativePath,
-              promptSet: "__tuner_temp__",
-              fallbackSets,
-            }),
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            existingContent = data.content || "";
-          }
-        } catch { /* non-critical — diff display only */ }
-      }
-
-      const writeResp = await fetch("/api/files/write", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filePath: change.filePath, content: change.replaceText }),
-      });
-
-      if (!writeResp.ok) {
-        applied.push({
-          ...change,
-          originalContent: existingContent,
-          modifiedContent: "",
-          reason: `[SKIPPED] Failed to write file: HTTP ${writeResp.status}. ${change.reason}`,
-        });
-        continue;
-      }
-
-      applied.push({
-        ...change,
-        originalContent: existingContent,
-        modifiedContent: change.replaceText,
-      });
-      continue;
-    }
-
-    // Build the read URL with optional fallbacks so that if the file doesn't exist in
-    // the temp set yet, we seed it from the source set (or the original prompts).
-    let readUrl = `/api/files/read?path=${encodeURIComponent(change.filePath)}`;
-    if (sourceSetName && sourceSetName !== "__tuner_temp__") {
-      readUrl += `&fallback=${encodeURIComponent(sourceSetName)}`;
-    }
-    readUrl += `&fallback=__original__`;
-
-    // Read current content
-    const readResp = await fetch(readUrl);
-    if (!readResp.ok) {
-      // Non-fatal: skip this change
-      applied.push({
-        ...change,
-        originalContent: "",
-        modifiedContent: "",
-        reason: `[SKIPPED] Failed to read file: HTTP ${readResp.status}. ${change.reason}`,
-      });
-      continue;
-    }
-    const { content: originalContent } = await readResp.json();
-
-    // Try matching with multiple fallback strategies
-    const matchResult = findSearchMatch(originalContent, change.searchText);
-
-    if (!matchResult) {
-      // Non-fatal: skip this change and report it
-      applied.push({
-        ...change,
-        originalContent,
-        modifiedContent: "",
-        reason: `[SKIPPED] Search text not found — text may have changed since last round. ${change.reason}`,
-      });
-      continue;
-    }
-
-    const modifiedContent = originalContent.substring(0, matchResult.index) +
-      change.replaceText +
-      originalContent.substring(matchResult.index + matchResult.length);
-
-    // Write modified content
     const writeResp = await fetch("/api/files/write", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filePath: change.filePath, content: modifiedContent }),
+      body: JSON.stringify({ filePath: absolutePath, content: change.replaceText }),
     });
+    await debugLog("change:writeResult", { absolutePath, status: writeResp.status, ok: writeResp.ok });
 
     if (!writeResp.ok) {
+      const errBody = await writeResp.text().catch(() => "");
+      await debugLog("change:writeFailedBody", { status: writeResp.status, body: errBody.slice(0, 500) });
       applied.push({
         ...change,
-        originalContent,
+        originalContent: existingContent,
         modifiedContent: "",
         reason: `[SKIPPED] Failed to write file: HTTP ${writeResp.status}. ${change.reason}`,
       });
@@ -206,139 +177,31 @@ export async function applyPromptChanges(
 
     applied.push({
       ...change,
-      originalContent,
-      modifiedContent,
+      originalContent: existingContent,
+      modifiedContent: change.replaceText,
     });
   }
 
   return applied;
 }
 
+// ─── Debug logging ───────────────────────────────────────────────────────────
+
 /**
- * Try to find the search text in the content using multiple fallback strategies:
- * 1. Exact match
- * 2. Flexible whitespace
- * 3. Normalized quotes + exact
- * 4. Normalized quotes + flexible whitespace
- * 5. Case-insensitive flexible whitespace
- * 6. Normalized + case-insensitive flexible whitespace
- *
- * Returns { index, length } of the match in the ORIGINAL content, or null.
+ * Fire-and-forget debug logger. Mirrors to the browser console and appends
+ * a line to {editedPromptsDir}/tuner-debug.log via /api/debug/log so testers
+ * can ship the file when reporting issues. Best-effort — never throws.
  */
-function findSearchMatch(
-  content: string,
-  searchText: string,
-): { index: number; length: number } | null {
-  // 1. Exact match
-  const exactIdx = content.indexOf(searchText);
-  if (exactIdx !== -1) {
-    return { index: exactIdx, length: searchText.length };
-  }
-
-  // 2. Flexible whitespace
-  const flexRegex = buildFlexibleRegex(searchText);
-  if (flexRegex) {
-    const flexMatch = flexRegex.exec(content);
-    if (flexMatch) return { index: flexMatch.index, length: flexMatch[0].length };
-  }
-
-  // 3. Normalized quotes — exact
-  const normContent = normalizeQuotes(content);
-  const normSearch = normalizeQuotes(searchText);
-  const normIdx = normContent.indexOf(normSearch);
-  if (normIdx !== -1) {
-    return { index: normIdx, length: normSearch.length };
-  }
-
-  // 4. Normalized quotes — flexible whitespace
-  const normFlexRegex = buildFlexibleRegex(normSearch);
-  if (normFlexRegex) {
-    const normFlexMatch = normFlexRegex.exec(normContent);
-    if (normFlexMatch) return { index: normFlexMatch.index, length: normFlexMatch[0].length };
-  }
-
-  // 5. Case-insensitive flexible whitespace (on original)
-  const ciFlexRegex = buildFlexibleRegex(searchText, true);
-  if (ciFlexRegex) {
-    const ciMatch = ciFlexRegex.exec(content);
-    if (ciMatch) return { index: ciMatch.index, length: ciMatch[0].length };
-  }
-
-  // 6. Normalized + case-insensitive flexible whitespace
-  const normCiFlexRegex = buildFlexibleRegex(normSearch, true);
-  if (normCiFlexRegex) {
-    const normCiMatch = normCiFlexRegex.exec(normContent);
-    if (normCiMatch) return { index: normCiMatch.index, length: normCiMatch[0].length };
-  }
-
-  // 7. Line-anchor matching: find the first distinctive line of search text in the content,
-  //    then match a block of the same line count from that position.
-  //    This handles cases where the LLM slightly rephrases middle/end lines.
-  const searchLines = searchText.split("\n").map((l) => l.trim()).filter(Boolean);
-  if (searchLines.length >= 1) {
-    const contentLines = content.split("\n");
-
-    // Pre-compute the character offset where each line starts in the original content
-    const lineOffsets: number[] = [];
-    let offset = 0;
-    for (let i = 0; i < contentLines.length; i++) {
-      lineOffsets.push(offset);
-      offset += contentLines[i].length + 1; // +1 for the \n
-    }
-
-    // Find the first search line that's distinctive enough (>15 chars, not just punctuation/template)
-    const anchorLine = searchLines.find((l) => l.length > 15 && !/^[{%#\s}]+$/.test(l))
-      || searchLines[0];
-    const anchorNorm = normalizeQuotes(anchorLine.toLowerCase());
-
-    for (let ci = 0; ci < contentLines.length; ci++) {
-      const contentLineNorm = normalizeQuotes(contentLines[ci].trim().toLowerCase());
-      if (contentLineNorm.includes(anchorNorm) || anchorNorm.includes(contentLineNorm)) {
-        // Found anchor — use pre-computed line offsets for correct positioning
-        const blockStart = lineOffsets[ci];
-        const blockEndLine = Math.min(ci + searchLines.length, contentLines.length);
-        // Block end is the start of the line AFTER the block, minus the trailing newline
-        const blockEnd = blockEndLine < contentLines.length
-          ? lineOffsets[blockEndLine] - 1
-          : content.length;
-        const blockLength = blockEnd - blockStart;
-        if (blockLength > 0) {
-          return { index: blockStart, length: blockLength };
-        }
-      }
-    }
-  }
-
-  // 8. Containment: if the search text (trimmed) is contained in the content when
-  //    we collapse all whitespace to single spaces, match on that.
-  const collapsedContent = content.replace(/\s+/g, " ");
-  const collapsedSearch = searchText.trim().replace(/\s+/g, " ");
-  if (collapsedSearch.length > 20) {
-    const collapsedIdx = collapsedContent.toLowerCase().indexOf(collapsedSearch.toLowerCase());
-    if (collapsedIdx !== -1) {
-      // Build a mapping from collapsed positions to original positions.
-      // Walk through original content: each character maps to a collapsed position.
-      // Consecutive whitespace chars after the first one don't increment the collapsed index.
-      const collapsedToOrig: number[] = []; // collapsedToOrig[i] = original index for collapsed position i
-      let inWhitespaceRun = false;
-      for (let oi = 0; oi < content.length; oi++) {
-        const isWs = /\s/.test(content[oi]);
-        if (isWs && inWhitespaceRun) {
-          // Skip consecutive whitespace — doesn't map to any collapsed position
-          continue;
-        }
-        collapsedToOrig.push(oi);
-        inWhitespaceRun = isWs;
-      }
-
-      const origStart = collapsedToOrig[collapsedIdx] ?? 0;
-      const endCollapsedIdx = collapsedIdx + collapsedSearch.length;
-      const origEnd = endCollapsedIdx < collapsedToOrig.length
-        ? collapsedToOrig[endCollapsedIdx]
-        : content.length;
-      return { index: origStart, length: origEnd - origStart };
-    }
-  }
-
-  return null;
+async function debugLog(tag: string, data: unknown): Promise<void> {
+  try {
+    // eslint-disable-next-line no-console
+    console.log(`[apply-changes] ${tag}`, data);
+  } catch { /* ignore */ }
+  try {
+    await fetch("/api/debug/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tag, data }),
+    });
+  } catch { /* ignore */ }
 }

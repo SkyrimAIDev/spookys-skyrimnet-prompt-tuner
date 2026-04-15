@@ -285,75 +285,93 @@ export const NEW_PROMPT_LOCATIONS: Record<BenchmarkCategory, { directory: string
 
 /**
  * Enforce prompt editing mode constraints at the code level.
- * Filters out any proposed changes that violate the selected mode.
- * Returns the filtered changes and a list of rejected changes with reasons.
+ *
+ * Validates each LLM-proposed change against the per-mode rules using **exact
+ * canonical relative paths** — no basename matching, no fuzzy parsing. The
+ * `whitelist` parameter is the set of files actually shown to the LLM in this
+ * round (built from fetchPromptContent). Any change.filePath not in the
+ * whitelist (for edit modes) or violating the create rules (for create modes)
+ * is rejected and fed back to the LLM via the redirect retry loop.
+ *
+ * Mode rules:
+ * - **recommended** / **world_settings** / **custom** — must be an exact match
+ *   against the whitelist. No file creation allowed.
+ * - **new_prompt** — must be a NEW file (not in whitelist) under the agent's
+ *   `newLocation.directory`, ending in `.prompt`.
+ * - **auto** — must be an exact whitelist match (edit) OR a new file under the
+ *   agent's `newLocation.directory` (create).
  */
 export function enforcePromptEditingMode(
   changes: PromptChange[],
   mode: PromptEditingMode,
   category: BenchmarkCategory,
   customPaths?: string[],
+  whitelist?: string[],
 ): { allowed: PromptChange[]; rejected: PromptChange[] } {
-  if (mode === "auto") {
-    // Auto mode — no restrictions
-    return { allowed: changes, rejected: [] };
-  }
-
   const allowed: PromptChange[] = [];
   const rejected: PromptChange[] = [];
 
-  // Build the set of allowed file paths/names based on mode
-  let allowedNames: Set<string> | null = null;
-  let allowNewFiles = false;
-
+  // Build the per-mode allowed-edit set from the whitelist actually shown.
+  let allowedEdits: Set<string> = new Set();
   if (mode === "recommended") {
-    const rec = RECOMMENDED_PROMPTS[category] || [];
-    // Match by filename (last path segment) since the LLM uses absolute paths
-    allowedNames = new Set(rec.map((p) => p.split("/").pop()!));
-    allowNewFiles = false;
+    allowedEdits = new Set(RECOMMENDED_PROMPTS[category] || []);
   } else if (mode === "world_settings") {
-    allowedNames = new Set(["0010_setting.prompt"]);
-    allowNewFiles = false;
+    allowedEdits = new Set(["submodules/system_head/0010_setting.prompt"]);
   } else if (mode === "custom") {
-    if (customPaths && customPaths.length > 0) {
-      allowedNames = new Set(customPaths.map((p) => p.split("/").pop()!));
-    } else {
-      allowedNames = new Set(); // No paths selected — block all changes
-    }
-    allowNewFiles = false;
-  } else if (mode === "new_prompt") {
-    allowedNames = null; // No existing file editing allowed
-    allowNewFiles = true;
+    allowedEdits = new Set(customPaths || []);
+  } else if (mode === "auto" || mode === "new_prompt") {
+    // Edits are restricted to files actually shown to the LLM this round.
+    allowedEdits = new Set(whitelist || []);
   }
 
-  for (const change of changes) {
-    const fileName = change.filePath.split("/").pop() || change.filePath;
-    // With full file replacement, searchText is always empty — that's normal editing, not "new file".
-    // A change is only "creating a new file" if there's no existing file at that path AND
-    // the filename doesn't match any known file in the allowed lists.
-    // For enforcement purposes, we check by filename against the allowed list.
-    const isKnownFile = allowedNames ? allowedNames.has(fileName) : true;
+  // Create rules — only meaningful for modes that allow creation
+  const newLocation = NEW_PROMPT_LOCATIONS[category];
+  const allowsCreate = mode === "new_prompt" || mode === "auto";
+  const createDirPrefix = newLocation
+    ? (newLocation.directory === "." ? "" : newLocation.directory.replace(/\/+$/, "") + "/")
+    : null;
 
-    if (mode === "new_prompt") {
-      // New prompt mode — only allow creating genuinely new files
-      if (!isKnownFile) {
-        allowed.push(change);
-      } else {
-        // Editing a known file is allowed too in new_prompt mode (full replacement)
-        allowed.push(change);
-      }
-    } else {
-      // recommended, world_settings, custom — only allow listed files
-      if (allowedNames && !allowedNames.has(fileName)) {
-        rejected.push({
-          ...change,
-          reason: `[BLOCKED] File not in ${mode} allowed list: ${fileName}. ${change.reason}`,
-          modifiedContent: "",
-        });
-      } else {
-        allowed.push(change);
-      }
+  const isValidCreate = (path: string): boolean => {
+    if (!allowsCreate || createDirPrefix === null) return false;
+    if (!path.endsWith(".prompt")) return false;
+    // Reject path-traversal and absolute paths upfront
+    if (path.includes("..") || path.startsWith("/") || /^[A-Za-z]:/.test(path)) return false;
+    if (createDirPrefix === "") {
+      // Root-level create — must have no slashes (a single file at the prompts root)
+      return !path.includes("/");
     }
+    return path.startsWith(createDirPrefix);
+  };
+
+  for (const change of changes) {
+    const path = change.filePath;
+
+    // Edit path: exact whitelist match
+    if (allowedEdits.has(path)) {
+      allowed.push(change);
+      continue;
+    }
+
+    // Create path: only for new_prompt / auto modes
+    if (isValidCreate(path)) {
+      allowed.push(change);
+      continue;
+    }
+
+    // Build a clear reject reason that the redirect retry loop can show to the LLM.
+    let reason: string;
+    if (mode === "new_prompt") {
+      reason = `[BLOCKED] "${path}" is not a valid new file location. New files must be under "${newLocation?.directory}" and end in ".prompt".`;
+    } else if (mode === "auto") {
+      reason = `[BLOCKED] "${path}" is not in the available files menu and is not a valid new file location (must be under "${newLocation?.directory}").`;
+    } else {
+      reason = `[BLOCKED] "${path}" is not in the ${mode} allowed list. Must be an exact match against the file menu.`;
+    }
+    rejected.push({
+      ...change,
+      reason: `${reason} ${change.reason}`,
+      modifiedContent: "",
+    });
   }
 
   return { allowed, rejected };

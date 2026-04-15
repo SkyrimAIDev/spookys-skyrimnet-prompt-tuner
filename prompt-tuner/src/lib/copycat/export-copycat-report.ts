@@ -2,6 +2,15 @@ import type { AiTuningSettings } from "@/types/config";
 import type { CopycatRound } from "@/types/copycat";
 import type { TuningTarget } from "@/types/autotuner";
 
+/**
+ * Pick a backtick fence longer than any backtick run inside `content`, so
+ * embedded ``` blocks don't close the wrapper early.
+ */
+function fenceFor(content: string): string {
+  const longest = (content.match(/`+/g) || []).reduce((m, s) => Math.max(m, s.length), 0);
+  return "`".repeat(Math.max(3, longest + 1));
+}
+
 interface CopycatExportParams {
   referenceModelId: string;
   targetModelId: string;
@@ -104,9 +113,10 @@ export function buildCopycatReport(params: CopycatExportParams): string {
       for (const turn of round.referenceDialogue) {
         push(`**${turn.label}:**`);
         push("");
-        push("```");
+        const f = fenceFor(turn.response);
+        push(f);
         push(turn.response);
-        push("```");
+        push(f);
         push("");
       }
     }
@@ -118,9 +128,10 @@ export function buildCopycatReport(params: CopycatExportParams): string {
       for (const turn of round.targetDialogue) {
         push(`**${turn.label}:**`);
         push("");
-        push("```");
+        const f = fenceFor(turn.response);
+        push(f);
         push(turn.response);
-        push("```");
+        push(f);
         push("");
       }
     }
@@ -165,14 +176,19 @@ export function buildCopycatReport(params: CopycatExportParams): string {
         for (const pc of round.proposal.promptChanges) {
           push(`*${pc.filePath}* — ${pc.reason}`);
           push("");
-          push("```diff");
-          for (const line of pc.searchText.split("\n")) {
-            push(`- ${line}`);
+          {
+            // Full-file replacement: original on "-", new on "+"
+            const original = pc.originalContent || "";
+            const replacement = pc.replaceText || "";
+            const diffBody =
+              original.split("\n").map((l) => `- ${l}`).join("\n") +
+              (original ? "\n" : "") +
+              replacement.split("\n").map((l) => `+ ${l}`).join("\n");
+            const f = fenceFor(diffBody);
+            push(`${f}diff`);
+            push(diffBody);
+            push(f);
           }
-          for (const line of pc.replaceText.split("\n")) {
-            push(`+ ${line}`);
-          }
-          push("```");
           push("");
         }
       }
@@ -185,9 +201,10 @@ export function buildCopycatReport(params: CopycatExportParams): string {
       for (const vr of round.verificationRuns) {
         push(`> "${vr.customLine}"`);
         push("");
-        push("```");
+        const f = fenceFor(vr.response);
+        push(f);
         push(vr.response);
-        push("```");
+        push(f);
         push("");
       }
     }

@@ -65,7 +65,7 @@ function loadPersisted(): {
     startingSettings: { ...COPYCAT_DEFAULT_SETTINGS },
     referenceApiOverride: { ...EMPTY_API_OVERRIDE },
     targetApiOverride: { ...EMPTY_API_OVERRIDE },
-    isNarrationEnabled: true,
+    isNarrationEnabled: false,
   };
   if (typeof window === "undefined") return defaults;
   try {
@@ -88,7 +88,7 @@ function loadPersisted(): {
           : { ...COPYCAT_DEFAULT_SETTINGS },
         referenceApiOverride: data.referenceApiOverride ?? { ...EMPTY_API_OVERRIDE },
         targetApiOverride: data.targetApiOverride ?? { ...EMPTY_API_OVERRIDE },
-        isNarrationEnabled: data.isNarrationEnabled ?? true,
+        isNarrationEnabled: data.isNarrationEnabled ?? false,
       };
     }
   } catch { /* ignore */ }

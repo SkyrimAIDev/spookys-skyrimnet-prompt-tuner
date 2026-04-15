@@ -239,7 +239,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   })(),
   autochatStartedAt: null,
   autochatStatus: "idle",
-  isNarrationEnabled: true, // Hydrated from localStorage below
+  isNarrationEnabled: false, // Hydrated from localStorage below
   quickDialogueModel: "",
   multichatEnabled: false,
   multichatProfileIds: [],

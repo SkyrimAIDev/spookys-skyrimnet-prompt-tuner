@@ -246,7 +246,7 @@ export function AutoTunerReport() {
                           </span>
                           {round.proposal?.promptChanges.filter(c => c.reason?.startsWith("[SKIPPED]")).map((c, i) => (
                             <span key={i} className="block text-[10px] text-yellow-500 break-words" title={c.reason || ""}>
-                              Skipped: {c.filePath.split("/").pop()} — search text not found
+                              Skipped: {c.filePath.split("/").pop()} — {c.reason?.replace(/^\[SKIPPED\]\s*/, "").split(".")[0] || "change not applied"}
                             </span>
                           ))}
                         </div>

@@ -223,6 +223,7 @@ function CopycatPostTuningChatInput() {
           workingSettings: useCopycatStore.getState().workingSettings,
           setWorkingSettings: (s: AiTuningSettings) => useCopycatStore.getState().setWorkingSettings(s),
           sourceSetName: useCopycatStore.getState().selectedPromptSet || undefined,
+          modifiedFiles: [...modifiedPaths],
           getCopycatRoundExtra: (idx: number) => {
             const r = useCopycatStore.getState().rounds[idx];
             if (!r) return "";

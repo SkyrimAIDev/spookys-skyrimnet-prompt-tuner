@@ -8,7 +8,7 @@ import { buildTunerAssessmentMessages } from "./build-tuner-assessment";
 import { buildExplanationMessages } from "@/lib/benchmark/build-explanation-prompt";
 import { buildProposalMessages } from "./build-proposal-prompt";
 import { parseProposal } from "./parse-proposal";
-import { applySettingsChanges, applyPromptChanges } from "./apply-changes";
+import { applySettingsChanges, applyPromptChanges, prefetchOriginalContent } from "./apply-changes";
 import { fetchPromptContent } from "./fetch-prompt-content";
 import { createTunerTempSet, deleteTunerTempSet, TUNER_TEMP_SET } from "./save-results";
 import { buildAutoTunerSummaryMessages } from "./build-summary-prompt";
@@ -472,6 +472,10 @@ export async function runTuningLoop(
       store.setStatusMessage("Proposing changes...");
 
       let promptContent = "";
+      // Whitelist of canonical relative paths the LLM is allowed to reference
+      // in prompt_changes. Built from fetchPromptContent — only files that
+      // are EDITABLE or EDIT_WITH_CARE; DO_NOT_EDIT bio context is excluded.
+      let fileMenu: string[] = [];
       if (tuningTarget === "prompts" || tuningTarget === "both") {
         _t("fetchPromptContent START");
         // Fetch prompt file contents for the tuner LLM to analyze
@@ -479,6 +483,9 @@ export async function runTuningLoop(
         const promptSetPath = workingPromptSet || "";
         const fetched = await fetchPromptContent(category, promptSetPath, sourceSetName || "", activeScenario.npcs);
         promptContent = fetched.content;
+        fileMenu = fetched.files
+          .filter((f) => f.editability !== "DO_NOT_EDIT")
+          .map((f) => f.relativePath);
       }
 
       const previousRounds = useAutoTunerStore.getState().rounds.slice(0, roundIdx);
@@ -490,6 +497,7 @@ export async function runTuningLoop(
           currentSettings: workingSettings,
           originalSettings,
           promptContent,
+          fileMenu,
           previousRounds,
           currentAssessment: assessmentText,
           currentResponse: benchResponse,
@@ -520,6 +528,17 @@ export async function runTuningLoop(
         }
 
         const proposal = parseProposal(proposalLog.response);
+        // Pre-fetch existing prompt content so the diff UI can render the
+        // left panel immediately — without this, there's a visible gap from
+        // when the proposal lands until applyPromptChanges() finishes.
+        if (proposal.promptChanges.length > 0 && tuningTarget !== "settings") {
+          try {
+            proposal.promptChanges = await prefetchOriginalContent(
+              proposal.promptChanges,
+              workingPromptSet || undefined,
+            );
+          } catch { /* best-effort */ }
+        }
         store.setRoundProposal(roundIdx, proposal, proposalLog.response);
 
         // Check if tuner wants to stop
@@ -553,7 +572,7 @@ export async function runTuningLoop(
 
           for (let retry = 0; retry <= MAX_REDIRECT_RETRIES; retry++) {
             const { allowed, rejected } = enforcePromptEditingMode(
-              pendingChanges, mode, category, customPromptPaths,
+              pendingChanges, mode, category, customPromptPaths, fileMenu,
             );
 
             // Create temp set if needed
@@ -580,19 +599,27 @@ export async function runTuningLoop(
             _t(`REDIRECT RETRY ${retry + 1} — ${rejected.length} blocked changes`);
             store.setStatusMessage(`Redirecting ${rejected.length} blocked change${rejected.length !== 1 ? "s" : ""} to allowed files...`);
 
-            const allowedFileNames = (mode === "recommended"
-              ? (await import("./prompt-editing-modes")).RECOMMENDED_PROMPTS[category]
+            // Build the list of valid file_path values for the redirect message.
+            // For modes with a fixed allow-list, show that list explicitly so the
+            // LLM can copy the path verbatim.
+            const recPrompts = (await import("./prompt-editing-modes")).RECOMMENDED_PROMPTS;
+            const allowedPaths = mode === "recommended"
+              ? (recPrompts[category] || [])
               : mode === "world_settings"
                 ? ["submodules/system_head/0010_setting.prompt"]
-                : customPromptPaths
-            )?.map((p) => p.split("/").pop()) || [];
+                : mode === "custom"
+                  ? (customPromptPaths || [])
+                  : fileMenu;
 
-            const redirectPrompt = `The following prompt changes were BLOCKED because they target files outside your allowed list. You may ONLY edit: ${allowedFileNames.join(", ")}.
+            const redirectPrompt = `The following prompt changes were BLOCKED because their \`file_path\` did not match the allowed file list:
 
-Blocked changes that need to be redirected:
-${rejected.map((c) => `- Tried to ${c.searchText ? "edit" : "create"} "${c.filePath.split("/").pop()}": ${c.reason}`).join("\n")}
+${rejected.map((c) => `- "${c.filePath}" — ${c.reason}`).join("\n")}
 
-Please propose new prompt_changes that incorporate the SAME improvements into the ALLOWED files listed above. Respond with the same JSON format.`;
+The \`file_path\` field in every prompt_changes entry MUST be a verbatim copy of one of these canonical relative paths:
+
+${allowedPaths.map((p) => `- \`${p}\``).join("\n")}
+
+Please propose new prompt_changes that incorporate the SAME improvements using one of the allowed paths above. Respond with the same JSON format.`;
 
             try {
               const redirectMessages: import("@/types/llm").ChatMessage[] = [

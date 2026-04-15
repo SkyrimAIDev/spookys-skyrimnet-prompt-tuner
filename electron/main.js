@@ -103,6 +103,9 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      // Keep timers/JS running at full speed when the window is in the
+      // background — otherwise long tuning runs throttle to ~1Hz on minimize.
+      backgroundThrottling: false,
       preload: path.join(__dirname, "preload.js"),
     },
   });

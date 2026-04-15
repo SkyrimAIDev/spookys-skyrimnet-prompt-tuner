@@ -1,4 +1,4 @@
-import type { TunerRound } from "@/types/autotuner";
+import type { TunerRound, PromptChange } from "@/types/autotuner";
 import type { AiTuningSettings } from "@/types/config";
 import type { ChatMessage } from "@/types/llm";
 import { applySettingsChanges, applyPromptChanges } from "./apply-changes";
@@ -23,8 +23,10 @@ Get full details for a specific round (settings changes, prompt edits, assessmen
 
 ### get_prompt_file
 Read the current content of a prompt file that was modified during the session.
+The \`file_path\` must be one of the canonical relative paths shown in the
+"Modified Prompt Files" section above (exact string match).
 <invoke name="get_prompt_file">
-<parameter name="file_path">path/from/round/data</parameter>
+<parameter name="file_path">submodules/system_head/0010_setting.prompt</parameter>
 </invoke>
 
 ### get_current_settings
@@ -39,16 +41,23 @@ Modify inference settings. Changes are applied immediately.
 </invoke>
 
 ### edit_prompt
-Edit a prompt file via search/replace. The search_text must be COPIED EXACTLY from the file content (use get_prompt_file first to see the current content).
+Replace the entire content of a prompt file with new content. This is a
+**full-file replacement** — provide the complete new file in \`new_content\`,
+not a partial diff. Always call \`get_prompt_file\` first to see the current
+content, then output the full file with your modifications applied.
+
+The \`file_path\` must be one of the canonical relative paths from the
+"Modified Prompt Files" section — exact string match. No absolute paths.
+
 <invoke name="edit_prompt">
-<parameter name="file_path">/full/path/to/file.prompt</parameter>
-<parameter name="search_text">exact text to find</parameter>
-<parameter name="replace_text">replacement text</parameter>
+<parameter name="file_path">submodules/system_head/0010_setting.prompt</parameter>
+<parameter name="new_content">THE COMPLETE NEW FILE CONTENT WITH YOUR CHANGES APPLIED</parameter>
 <parameter name="reason">why this change helps</parameter>
 </invoke>
 
 **Important:**
-- Always use get_prompt_file before edit_prompt to see the current file content
+- Always use get_prompt_file before edit_prompt to read the current file content
+- Output the FULL file in new_content — preserving all template syntax (\`{{ }}\`, \`{% %}\`) and section markers exactly as they appear
 - When answering questions, use get_round_details to retrieve specific round data rather than guessing
 - If no tool is needed, just respond normally with text`;
 
@@ -70,8 +79,11 @@ ${modifiedFilePaths.map((p) => `- \`${p}\``).join("\n")}`
 ## Behavior
 - **Be concise.** Give direct answers without narrating your thought process.
 - **Use tools silently.** When you need to look up data or make edits, just call the tool and present the result. Do NOT say "Let me check..." or "Let me try..." — just do it.
-- **When making edits:** Call get_prompt_file first to get exact content, then call edit_prompt with text copied exactly from the file. Do this in one smooth flow without commentary between steps.
+- **When making edits:** Call get_prompt_file first to get the current content, then call edit_prompt with the COMPLETE new file in \`new_content\`. Do this in one smooth flow without commentary between steps.
 - **Only show the user the outcome** — what changed and why, not the steps you took to get there.
+
+## Path discipline
+Both \`get_prompt_file\` and \`edit_prompt\` require an exact canonical relative path (e.g. \`submodules/system_head/0010_setting.prompt\`) — the same paths the autotuner used during the session. They are listed in the "Modified Prompt Files" section below. Do NOT shorten, abbreviate, or invent paths. Validation rejects anything that is not a byte-for-byte match.
 
 ## Session Summary
 ${sessionSummary || "No summary available."}
@@ -104,6 +116,12 @@ export interface ToolContext {
   workingSettings: AiTuningSettings | null;
   setWorkingSettings: (s: AiTuningSettings) => void;
   sourceSetName?: string;
+  /**
+   * Whitelist of canonical relative paths the chat agent is allowed to read
+   * or edit — same paths the autotuner used during the session. Built from
+   * the modified files of all rounds in the completed session.
+   */
+  modifiedFiles?: string[];
   /** For copycat: rounds have effectivenessScore and comparisonText */
   getCopycatRoundExtra?: (roundIdx: number) => string;
 }
@@ -167,31 +185,34 @@ export async function executeToolCall(
 
     case "get_prompt_file": {
       const path = call.args.file_path;
-      // Look through rounds for the most recent version of this file
-      let content: string | null = null;
-      for (let i = ctx.rounds.length - 1; i >= 0; i--) {
-        for (const pc of ctx.rounds[i].proposal?.promptChanges || []) {
-          if (pc.filePath === path || pc.filePath.endsWith(path)) {
-            content = pc.modifiedContent || pc.originalContent || null;
-            if (content) break;
+      if (!path) return { result: "Error: file_path is required." };
+
+      // Strict whitelist match — agent must use the exact relative path.
+      if (ctx.modifiedFiles && ctx.modifiedFiles.length > 0 && !ctx.modifiedFiles.includes(path)) {
+        return {
+          result: `Error: "${path}" is not in the modified files list. Use one of:\n${ctx.modifiedFiles.map((p) => `- ${p}`).join("\n")}`,
+        };
+      }
+
+      // Read from temp set → source set → originals via the set-aware endpoint.
+      const fallbackSets: string[] = [];
+      if (ctx.sourceSetName && ctx.sourceSetName !== "__tuner_temp__") fallbackSets.push(ctx.sourceSetName);
+      fallbackSets.push("__original__");
+      try {
+        const resp = await fetch("/api/files/read-prompt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ relativePath: path, promptSet: "__tuner_temp__", fallbackSets }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.content) {
+            return { result: `## ${path}\n\`\`\`\n${data.content}\n\`\`\`` };
           }
         }
-        if (content) break;
-      }
+      } catch { /* fall through */ }
 
-      if (!content) {
-        // Try to read via API
-        try {
-          const resp = await fetch(`/api/files/read?path=${encodeURIComponent(path)}`);
-          if (resp.ok) {
-            const data = await resp.json();
-            content = data.content;
-          }
-        } catch { /* skip */ }
-      }
-
-      if (!content) return { result: `File not found: ${path}` };
-      return { result: `## ${path.split("/").pop()}\n\`\`\`\n${content}\n\`\`\`` };
+      return { result: `File not found: ${path}` };
     }
 
     case "get_current_settings": {
@@ -234,34 +255,46 @@ export async function executeToolCall(
     }
 
     case "edit_prompt": {
-      const { file_path, search_text, replace_text, reason } = call.args;
-      if (!file_path || replace_text === undefined) return { result: "Error: file_path and replace_text are required." };
+      const { file_path, new_content, reason } = call.args;
+      if (!file_path || new_content === undefined) {
+        return { result: "Error: file_path and new_content are required." };
+      }
+
+      // Strict whitelist match against the session's modified files.
+      if (ctx.modifiedFiles && ctx.modifiedFiles.length > 0 && !ctx.modifiedFiles.includes(file_path)) {
+        return {
+          result: `Error: "${file_path}" is not in the modified files list. Use one of:\n${ctx.modifiedFiles.map((p) => `- ${p}`).join("\n")}`,
+        };
+      }
+
       try {
-        const parsed = parseProposal(JSON.stringify({
-          settings_changes: [],
-          prompt_changes: [{ file_path, search_text: search_text || "", replace_text, reason: reason || "chat edit" }],
-          reasoning: "chat",
-          stop_tuning: false,
-        }));
-        const results = await applyPromptChanges(parsed.promptChanges, ctx.sourceSetName);
+        const change: PromptChange = {
+          filePath: file_path,
+          searchText: "",
+          replaceText: new_content,
+          originalContent: "",
+          modifiedContent: "",
+          reason: reason || "chat edit",
+        };
+        const results = await applyPromptChanges([change], ctx.sourceSetName);
         const success = results.filter((c) => !c.reason?.startsWith("[SKIPPED]"));
         const skipped = results.filter((c) => c.reason?.startsWith("[SKIPPED]"));
         if (success.length > 0) {
           return {
-            result: `Prompt edited successfully: ${file_path.split("/").pop()}`,
+            result: `Prompt edited successfully: ${file_path}`,
             applied: {
               type: "prompt",
               summary: `${success.length} prompt edit${success.length !== 1 ? "s" : ""} applied`,
               promptChanges: success.map((c) => ({
                 filePath: c.filePath,
-                searchText: c.searchText || "",
+                searchText: "",
                 replaceText: c.replaceText || "",
                 reason: c.reason || "",
               })),
             },
           };
         } else if (skipped.length > 0) {
-          return { result: `Edit skipped — search text not found in ${file_path.split("/").pop()}. Use get_prompt_file to see the current content and try again with exact text.` };
+          return { result: `Edit skipped: ${skipped[0].reason}` };
         }
         return { result: "No changes applied." };
       } catch (e) {

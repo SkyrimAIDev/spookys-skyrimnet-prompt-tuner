@@ -157,7 +157,7 @@ export function buildPromptEditingRules(category: BenchmarkCategory, mode: impor
   const newLocation = NEW_PROMPT_LOCATIONS[category];
 
   // Common rules for all modes
-  const commonRules = `9. **When modifying files, output the COMPLETE new file content.** Set \`search_text\` to \`""\` and put the entire modified file in \`replace_text\`. Preserve ALL template syntax (\`{{ }}\`, \`{% %}\`, section markers, decorator calls) exactly as they appear — only change the plain-text instruction content.
+  const commonRules = `9. **When modifying files, output the COMPLETE new file content** in \`replace_text\`. Every prompt change is a full-file replacement — there is no partial-edit mode. Preserve ALL template syntax (\`{{ }}\`, \`{% %}\`, section markers, decorator calls) exactly as they appear — only change the plain-text instruction content.
 10. **Prompt changes must be universal.** These prompts are used for THOUSANDS of different NPC dialogues across all of Skyrim — guards, merchants, innkeepers, quest characters, companions, etc. Proposed changes must improve quality for ANY NPC in ANY context. NEVER propose changes specific to the current benchmark scenario.
 11. **Keep additions concise.** SkyrimNet has a default max context of 4096 tokens. The official docs warn: "Too many rules = more hallucinations." Add the minimum instruction needed. A single clear sentence beats a paragraph of explanation.`;
 
@@ -184,8 +184,8 @@ ${settingGuide ? `#### \`0010_setting.prompt\`\n${settingGuide}` : "The world se
   }
 
   if (mode === "recommended") {
-    return `8. **ONLY edit the recommended prompts for this agent.** You may ONLY propose changes to these specific files:
-${recommended.map((p) => `   - \`${p.split("/").pop()}\``).join("\n")}
+    return `8. **ONLY edit the recommended prompts for this agent.** You may ONLY propose changes to these specific files (use the exact relative path as \`file_path\`):
+${recommended.map((p) => `   - \`${p}\``).join("\n")}
    Do NOT create new files. Do NOT edit other files. Focus your edits on these files because they have the highest impact on this agent's output quality.
 
 ${commonRules}
@@ -201,7 +201,7 @@ ${editingGuides}`;
     return `8. **Create a NEW prompt file — do NOT edit existing files.** You must create one new submodule file instead of modifying any existing prompt.
    - Directory: \`${newLocation?.directory || "."}\`
    - ${newLocation?.numberingHint || "Use a 4-digit numeric prefix for file ordering."}
-   - To create a new file: use an empty \`search_text\` ("") and provide the full file content in \`replace_text\`
+   - To create a new file: provide the full file content in \`replace_text\`. The file_path must start with the directory above and end in \`.prompt\`.
    - Your new file should contain ONLY plain-text instructions — do NOT use template syntax unless you fully understand the Inja engine
    - Do NOT duplicate instructions that already exist in the files shown below
 
@@ -216,11 +216,10 @@ ${commonRules}`;
 
   // "auto" mode — enhanced with recommended prompt awareness
   return `8. **Choose between editing an existing file or creating a new one.** First, read all existing files in the relevant submodule to check if your intended instructions are already covered or closely related to existing content. Then:
-   - **Edit an existing file** if your change naturally fits alongside its current instructions (e.g., adding a roleplay rule to the roleplay guidelines file, or tweaking an existing instruction). This avoids scattering related rules across multiple files.
-   - **Create a new file** when your instructions represent a genuinely new topic not covered by any existing file. Use a numbered name that places it in the right position within the submodule directory.
-   - **Recommended high-impact files for this agent:**
-${recommended.map((p) => `     - \`${p.split("/").pop()}\``).join("\n")}
-   - To create a new file: use an empty \`search_text\` ("") and put the full file content in \`replace_text\`
+   - **Edit an existing file** by setting \`file_path\` to its exact relative path from the Available Files menu. This avoids scattering related rules across multiple files.
+   - **Create a new file** when your instructions represent a genuinely new topic not covered by any existing file. The new file's \`file_path\` MUST start with \`${newLocation?.directory || "."}/\` and end in \`.prompt\`. Use a numbered name that places it in the right position within the directory.
+   - **Recommended high-impact files for this agent (use the full relative path):**
+${recommended.map((p) => `     - \`${p}\``).join("\n")}
    - NEVER duplicate instructions that already exist in another file
 
 ${commonRules}
@@ -243,6 +242,7 @@ export function buildProposalMessages({
   currentSettings,
   originalSettings,
   promptContent,
+  fileMenu,
   previousRounds,
   currentAssessment,
   currentResponse,
@@ -258,6 +258,7 @@ export function buildProposalMessages({
   currentSettings: AiTuningSettings;
   originalSettings: AiTuningSettings;
   promptContent: string;
+  fileMenu: string[];
   previousRounds: TunerRound[];
   currentAssessment: string;
   currentResponse: string;
@@ -299,14 +300,30 @@ You may propose changes to any UNLOCKED settings. Use the parameter name exactly
     if (promptContent) {
       // Build agent-specific pipeline guide
       const pipelineGuide = buildPipelineGuide(catDef?.agent || "default");
+
+      // Explicit menu of valid file_path values. Validation downstream is an
+      // EXACT string match against this list — anything else is rejected.
+      const menuLines = fileMenu.length > 0
+        ? fileMenu.map((p) => `- \`${p}\``).join("\n")
+        : "(none)";
+
       promptsSection = `## Prompt Pipeline Architecture
 
 ${pipelineGuide}
 
+## Available Files (use exactly one of these as \`file_path\`)
+
+When proposing a prompt change, the \`file_path\` field MUST be a verbatim copy of one of the entries below. Do not abbreviate, drop directories, change separators, or invent new paths. Validation rejects anything that is not a byte-for-byte exact match.
+
+${menuLines}
+
+## How to propose a prompt change
+
+To modify a file, put the COMPLETE new file content in \`replace_text\`. Every prompt change is a full-file replacement — output ALL of the file with your modifications applied. Preserve ALL template syntax (\`{{ }}\`, \`{% %}\`) exactly — only modify plain-text instructions.
+
 ## Current Prompt Files
 
-The following prompt files are used by this agent. To modify a file, set \`search_text\` to \`""\` (empty) and put the COMPLETE new file content in \`replace_text\`. This replaces the entire file — output ALL of it with your modifications applied.
-**IMPORTANT:** The file_path in each section header is the exact path you must use in your prompt_changes proposals. Copy it exactly. Preserve ALL template syntax (\`{{ }}\`, \`{% %}\`) — only modify plain-text instructions.
+The full content of each available file is shown below. Each section header starts with the same canonical relative path you must use in \`file_path\`.
 
 ${promptContent}`;
     } else {
@@ -460,11 +477,14 @@ Respond with a JSON object (no markdown fences):
     { "parameter": "temperature", "old_value": 0.7, "new_value": 0.5, "reason": "reduce randomness for more consistent responses" }
   ]${canModifyPrompts ? `,
   "prompt_changes": [
-    { "file_path": "/absolute/path/to/file.prompt", "search_text": "", "replace_text": "THE COMPLETE NEW FILE CONTENT — output the entire file with your changes applied", "reason": "why this change helps" }
+    { "file_path": "submodules/system_head/0010_setting.prompt", "replace_text": "THE COMPLETE NEW FILE CONTENT — output the entire file with your changes applied", "reason": "why this change helps" }
   ]` : ""}
 }
 
-**IMPORTANT for prompt_changes:** Always set \`search_text\` to \`""\` (empty string) and put the COMPLETE new file content in \`replace_text\`. This replaces the entire file. Do NOT try to do partial search/replace — output the full file with your modifications applied. Preserve all template syntax (\`{{ }}\`, \`{% %}\`), section markers, and decorator calls exactly as they appear in the original file. Only modify the plain-text instruction content.
+**IMPORTANT for prompt_changes:**
+- \`file_path\` MUST be one of the canonical relative paths from the "Available Files" menu above. Exact string match. No absolute paths, no drive letters, no shortened forms.
+- \`replace_text\` MUST contain the COMPLETE new file content. Every prompt change is a full-file replacement — output the full file with your modifications applied.
+- Preserve all template syntax (\`{{ }}\`, \`{% %}\`), section markers, and decorator calls exactly as they appear in the original file. Only modify the plain-text instruction content.
 
 If no changes are needed for a category, use an empty array. Always include all fields.${!canModifyPrompts ? " Do NOT include prompt_changes — you are only tuning inference settings." : ""}`;
 

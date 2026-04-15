@@ -20,7 +20,7 @@ function loadPersisted(): {
   selectedQuickModels: string[];
   isNarrationEnabled: boolean;
 } {
-  const defaults = { selectedProfileIds: [] as string[], customScenarios: [] as BenchmarkScenario[], activeScenarioIds: {} as Record<string, string>, selectedPromptSet: "__active__", quickModels: [] as string[], selectedQuickModels: [] as string[], isNarrationEnabled: true };
+  const defaults = { selectedProfileIds: [] as string[], customScenarios: [] as BenchmarkScenario[], activeScenarioIds: {} as Record<string, string>, selectedPromptSet: "__active__", quickModels: [] as string[], selectedQuickModels: [] as string[], isNarrationEnabled: false };
   if (typeof window === "undefined") return defaults;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -33,7 +33,7 @@ function loadPersisted(): {
         selectedPromptSet: data.selectedPromptSet ?? "__active__",
         quickModels: data.quickModels ?? [],
         selectedQuickModels: data.selectedQuickModels ?? [],
-        isNarrationEnabled: data.isNarrationEnabled ?? true,
+        isNarrationEnabled: data.isNarrationEnabled ?? false,
       };
     }
   } catch { /* ignore */ }

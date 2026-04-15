@@ -27,6 +27,7 @@ export function buildCopycatMessages({
   currentSettings,
   originalSettings,
   promptContent,
+  fileMenu,
   referenceDialogue,
   targetDialogue,
   previousRounds,
@@ -40,6 +41,7 @@ export function buildCopycatMessages({
   currentSettings: AiTuningSettings;
   originalSettings: AiTuningSettings;
   promptContent: string;
+  fileMenu: string[];
   referenceDialogue: CopycatDialogueTurn[];
   targetDialogue: CopycatDialogueTurn[];
   previousRounds: CopycatRound[];
@@ -72,14 +74,26 @@ You may propose changes to any UNLOCKED settings.${lockedSettings.length > 0 ? `
   if (canModifyPrompts) {
     if (promptContent) {
       const pipelineGuide = buildPipelineGuide("default");
+      const menuLines = fileMenu.length > 0
+        ? fileMenu.map((p) => `- \`${p}\``).join("\n")
+        : "(none)";
       promptsSection = `## Prompt Pipeline Architecture
 
 ${pipelineGuide}
 
+## Available Files (use exactly one of these as \`file_path\`)
+
+When proposing a prompt change, the \`file_path\` field MUST be a verbatim copy of one of the entries below. Do not abbreviate, drop directories, change separators, or invent new paths. Validation rejects anything that is not a byte-for-byte exact match.
+
+${menuLines}
+
+## How to propose a prompt change
+
+To modify a file, put the COMPLETE new file content in \`replace_text\`. Every prompt change is a full-file replacement. Preserve ALL template syntax (\`{{ }}\`, \`{% %}\`) exactly — only modify plain-text instructions.
+
 ## Current Prompt Files
 
-The following prompt files are used by this agent. To modify a file, output the COMPLETE new file content in \`replace_text\` with \`search_text\` set to \`""\` (empty). This replaces the entire file.
-**IMPORTANT:** The file_path in each section header is the exact path you must use in your prompt_changes proposals. Preserve ALL template syntax (\`{{ }}\`, \`{% %}\`) exactly — only modify plain-text instructions.
+The full content of each available file is shown below. Each section header starts with the same canonical relative path you must use in \`file_path\`.
 
 ${promptContent}`;
     } else {
@@ -127,10 +141,8 @@ ${previousRounds.map((r) => {
   const promptChanges = r.proposal?.promptChanges?.length
     ? `Prompt changes:\n${r.proposal.promptChanges.map((c) => {
         const skipped = c.reason?.startsWith("[SKIPPED]") ? " **(SKIPPED — not applied)**" : "";
-        const fileName = c.filePath.split("/").pop() || c.filePath;
-        const searchSnippet = c.searchText ? c.searchText.substring(0, 150) : "(new file)";
-        const replaceSnippet = c.replaceText ? c.replaceText.substring(0, 150) : "(deleted)";
-        return `  • \`${fileName}\`: ${c.reason}${skipped}\n    Search: "${searchSnippet}${(c.searchText?.length || 0) > 150 ? "..." : ""}"\n    Replace: "${replaceSnippet}${(c.replaceText?.length || 0) > 150 ? "..." : ""}"`;
+        const replaceSnippet = c.replaceText ? c.replaceText.substring(0, 200) : "(empty)";
+        return `  • \`${c.filePath}\`: ${c.reason}${skipped}\n    New content: "${replaceSnippet}${(c.replaceText?.length || 0) > 200 ? "..." : ""}"`;
       }).join("\n")}`
     : "No prompt changes";
   return `### Round ${r.roundNumber} (Score: ${score})
@@ -148,7 +160,7 @@ ${previousRounds.map((r) => {
   // Allowed modifications
   const allowedMods: string[] = [];
   if (canModifySettings) allowedMods.push("inference settings");
-  if (canModifyPrompts) allowedMods.push("prompt file content (via search/replace edits)");
+  if (canModifyPrompts) allowedMods.push("prompt file content (full-file replacement)");
 
   const systemContent = `You are an expert AI style-matching agent for SkyrimNet, an AI-powered NPC dialogue system for Skyrim.
 
@@ -225,10 +237,15 @@ Respond with a JSON object (no markdown fences):
     { "parameter": "temperature", "old_value": 1.0, "new_value": 0.8, "reason": "reduce creativity to match reference's more measured tone" }
   ]${canModifyPrompts ? `,
   "prompt_changes": [
-    { "file_path": "exact/path/from/section/header", "search_text": "", "replace_text": "THE COMPLETE NEW FILE CONTENT with your changes applied", "reason": "why this change helps" }
+    { "file_path": "submodules/system_head/0010_setting.prompt", "replace_text": "THE COMPLETE NEW FILE CONTENT with your changes applied", "reason": "why this change helps" }
   ]` : ""},
   "verification_requests": ["custom dialogue line to test"]
 }
+
+${canModifyPrompts ? `**IMPORTANT for prompt_changes:**
+- \`file_path\` MUST be one of the canonical relative paths from the "Available Files" menu above. Exact string match. No absolute paths, no drive letters, no shortened forms.
+- \`replace_text\` MUST contain the COMPLETE new file content. Every prompt change is a full-file replacement.
+- Preserve all template syntax (\`{{ }}\`, \`{% %}\`), section markers, and decorator calls exactly as they appear in the original file.` : ""}
 
 Always include all fields.${!canModifyPrompts ? " Do NOT include prompt_changes." : ""}`;
 

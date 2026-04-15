@@ -221,12 +221,25 @@ async function tryListPromptFiles(dirPath: string): Promise<FileEntry[]> {
  * If scenarioNpcs are provided, their character bio files are included
  * as read-only context so the tuner LLM understands the NPCs involved.
  */
+/**
+ * One file shown to the tuner LLM. `relativePath` is the canonical
+ * forward-slash path relative to a prompt set's prompts/ root, e.g.
+ * "submodules/system_head/0010_setting.prompt". This is the ONLY identifier
+ * the LLM sees and the only identifier accepted in proposal `file_path`
+ * fields downstream. No absolute paths anywhere in the LLM-facing pipeline.
+ */
+export interface PromptFileEntry {
+  relativePath: string;
+  content: string;
+  editability: "EDITABLE" | "EDIT_WITH_CARE" | "DO_NOT_EDIT";
+}
+
 export async function fetchPromptContent(
   category: BenchmarkCategory,
   promptSetName: string,
   fallbackSetName?: string,
   scenarioNpcs?: BenchmarkNpc[],
-): Promise<{ content: string; files: { path: string; name: string; content: string }[] }> {
+): Promise<{ content: string; files: PromptFileEntry[] }> {
   const catDef = getCategoryDef(category);
   if (!catDef) return { content: "", files: [] };
 
@@ -261,7 +274,7 @@ export async function fetchPromptContent(
     } catch { /* skip */ }
   }
 
-  const allFiles: { path: string; name: string; content: string }[] = [];
+  const allFiles: PromptFileEntry[] = [];
   let totalLength = 0;
   const MAX_TOTAL = MAX_TOTAL_CONTENT_LENGTH;
 
@@ -280,53 +293,34 @@ export async function fetchPromptContent(
         const content = await tryReadPrompt(entry, promptSetName || undefined, fallbackSetNames);
         if (content === null) continue;
 
-        // Always use primary path so LLM targets the writable set
-        allFiles.push({ path: fullPath, name: entry, content });
+        allFiles.push({ relativePath: entry, content, editability: getEditability(entry) });
         totalLength += content.length;
       } else {
         // Directory — merge primary listing with fallback listings so that
         // files modified in the temp set are read from there, while unmodified
         // files are still included from the source/original set.
         const primaryFiles = await tryListPromptFiles(fullPath);
-        const primaryNames = new Set(primaryFiles.map((f) => f.name));
+        const seenNames = new Set(primaryFiles.map((f) => f.name));
+        const mergedNames: string[] = primaryFiles.map((f) => f.name);
 
-        // Collect fallback files that don't exist in the primary set
-        const fallbackFiles: { entry: FileEntry; dir: string }[] = [];
         for (const fb of fallbackPaths) {
           const fbFiles = await tryListPromptFiles(fb);
           for (const f of fbFiles) {
-            if (!primaryNames.has(f.name)) {
-              primaryNames.add(f.name); // prevent duplicates across fallbacks
-              fallbackFiles.push({ entry: f, dir: fb });
+            if (!seenNames.has(f.name)) {
+              seenNames.add(f.name);
+              mergedNames.push(f.name);
             }
           }
         }
-
-        // Build merged list: primary files first, then fallback-only files (sorted by name)
-        const mergedFiles: { name: string; readPath: string; primaryPath: string }[] = [];
-        for (const f of primaryFiles) {
-          mergedFiles.push({ name: f.name, readPath: f.path, primaryPath: f.path });
-        }
-        for (const { entry: f } of fallbackFiles) {
-          mergedFiles.push({
-            name: f.name,
-            readPath: f.path,
-            primaryPath: `${fullPath}/${f.name}`.replace(/\\/g, "/"),
-          });
-        }
-        mergedFiles.sort((a, b) => a.name.localeCompare(b.name));
+        mergedNames.sort((a, b) => a.localeCompare(b));
 
         const fallbackSetNames = fallbackSetName ? [fallbackSetName, "__original__"] : ["__original__"];
-        for (const file of mergedFiles) {
+        for (const name of mergedNames) {
           if (totalLength > MAX_TOTAL) break;
-
-          // Use set-aware resolution — relative path is entry/filename
-          const relPath = `${entry}/${file.name}`;
+          const relPath = `${entry}/${name}`;
           const content = await tryReadPrompt(relPath, promptSetName || undefined, fallbackSetNames);
           if (content === null) continue;
-
-          // Always use the primary (temp set) path so LLM targets the writable location
-          allFiles.push({ path: file.primaryPath, name: relPath, content });
+          allFiles.push({ relativePath: relPath, content, editability: getEditability(relPath) });
           totalLength += content.length;
         }
       }
@@ -360,24 +354,29 @@ export async function fetchPromptContent(
         const truncated = bioContent.length > bioMaxLen
           ? bioContent.substring(0, bioMaxLen) + "\n... (truncated)"
           : bioContent;
-        bioSections.push(`### ${npc.displayName} (\`${uuid}\`)\n\`\`\`\n${truncated}\n\`\`\``);
+        const bioLongest = (truncated.match(/`+/g) || []).reduce((m, s) => Math.max(m, s.length), 0);
+        const bioFence = "`".repeat(Math.max(3, bioLongest + 1));
+        bioSections.push(`### ${npc.displayName} (\`${uuid}\`)\n${bioFence}\n${truncated}\n${bioFence}`);
         totalLength += truncated.length;
       }
     }
   }
 
-  // Format for the tuner LLM — use f.path in headers so the LLM knows the
-  // exact file path to use in search/replace prompt_changes proposals.
-  // Include editability tag so the LLM knows what's safe to modify.
+  // Format for the tuner LLM — section headers use the canonical relative
+  // path. The LLM must echo this exact string back in any prompt_changes
+  // proposal; downstream validation rejects anything that isn't an exact match.
   const sections = allFiles.map((f) => {
-    const editability = getEditability(f.name);
-    const label = EDITABILITY_LABELS[editability];
-    // Give more space to editable files, less to read-only context
-    const maxLen = editability === "DO_NOT_EDIT" ? READ_ONLY_FILE_LIMIT : EDITABLE_FILE_LIMIT;
+    const label = EDITABILITY_LABELS[f.editability];
+    const maxLen = f.editability === "DO_NOT_EDIT" ? READ_ONLY_FILE_LIMIT : EDITABLE_FILE_LIMIT;
     const truncated = f.content.length > maxLen
       ? f.content.substring(0, maxLen) + "\n... (truncated)"
       : f.content;
-    return `### \`${f.path}\`\n**[${label}]**\n\`\`\`\n${truncated}\n\`\`\``;
+    // Use a fence longer than any backtick run inside the content so embedded
+    // ``` blocks (common in prompts that show markdown examples) don't close
+    // the wrapper early and cause the LLM to see a truncated file.
+    const longestRun = (truncated.match(/`+/g) || []).reduce((m, s) => Math.max(m, s.length), 0);
+    const fence = "`".repeat(Math.max(3, longestRun + 1));
+    return `### \`${f.relativePath}\`\n**[${label}]**\n${fence}\n${truncated}\n${fence}`;
   });
 
   if (bioSections.length > 0) {

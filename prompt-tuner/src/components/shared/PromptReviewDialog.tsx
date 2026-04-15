@@ -55,7 +55,7 @@ export function PromptReviewDialog({
     fetch("/api/export/get-file-pair", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tempAbsPaths: tempFilePaths, targetSetName }),
+      body: JSON.stringify({ relativePaths: tempFilePaths, targetSetName }),
     })
       .then((r) => r.json())
       .then((data) => {

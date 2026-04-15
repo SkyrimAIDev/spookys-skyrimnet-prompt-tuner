@@ -6,22 +6,26 @@ import { resolvePromptSetBaseServer } from "@/lib/files/paths-server";
 
 /**
  * POST /api/export/get-file-pair
- * Body: { tempAbsPaths: string[], targetSetName: string }
+ * Body: { relativePaths: string[], targetSetName: string }
  * Returns an array of { relativePath, tempPath, targetPath, newContent, oldContent }
  * for each modified file in the temp set, pairing it with the existing content
  * in the target set (or empty string if the file doesn't exist there yet).
+ *
+ * Client sends canonical relative paths (e.g. "submodules/system_head/0010_setting.prompt"),
+ * and the server resolves them against the temp set base.
  */
 export async function POST(request: NextRequest) {
   try {
-    const { tempAbsPaths, targetSetName } = await request.json();
+    const { relativePaths, targetSetName } = await request.json();
 
-    if (!Array.isArray(tempAbsPaths) || typeof targetSetName !== "string") {
+    if (!Array.isArray(relativePaths) || typeof targetSetName !== "string") {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    for (const p of tempAbsPaths) {
-      if (!isPathAllowed(p)) {
-        return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    // Reject path-traversal or absolute paths — these must be relative to the prompts root.
+    for (const rel of relativePaths) {
+      if (typeof rel !== "string" || rel.includes("..") || rel.startsWith("/") || /^[A-Za-z]:/.test(rel)) {
+        return NextResponse.json({ error: `Invalid relative path: ${rel}` }, { status: 400 });
       }
     }
 
@@ -43,19 +47,15 @@ export async function POST(request: NextRequest) {
         : path.join(EDITED_PROMPTS_DIR, safeName, MO2_PROMPTS_SUBPATH);
     }
 
-    const normalizedTempBase = tempBase.replace(/\\/g, "/").replace(/\/$/, "");
-
     const pairs = await Promise.all(
-      tempAbsPaths.map(async (tempPath) => {
-        const normalizedTemp = tempPath.replace(/\\/g, "/");
-        const relativePath = normalizedTemp.startsWith(normalizedTempBase + "/")
-          ? normalizedTemp.slice(normalizedTempBase.length + 1)
-          : path.basename(tempPath);
-
+      relativePaths.map(async (relativePath: string) => {
+        const tempPath = path.join(tempBase, relativePath);
         const targetPath = path.join(targetBase, relativePath);
 
         const [newContent, oldContent] = await Promise.all([
-          fs.readFile(tempPath, "utf-8").catch(() => ""),
+          isPathAllowed(tempPath)
+            ? fs.readFile(tempPath, "utf-8").catch(() => "")
+            : Promise.resolve(""),
           isPathAllowed(targetPath)
             ? fs.readFile(targetPath, "utf-8").catch(() => "")
             : Promise.resolve(""),
