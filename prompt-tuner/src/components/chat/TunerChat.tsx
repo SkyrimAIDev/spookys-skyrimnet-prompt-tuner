@@ -240,8 +240,16 @@ export function TunerChat() {
           </div>
         )}
 
-        <ScrollArea ref={scrollAreaRef} className="flex-1 overflow-hidden">
-          <div className="p-3 space-y-3 min-w-0 overflow-hidden">
+        {/* Radix ScrollArea's Viewport wraps content in a `display: table;
+            min-width: 100%` div that otherwise stretches wider than the
+            viewport when lines are long — forcing block layout on that
+            inner wrapper lets our message bubbles' `max-w-[85%]` actually
+            constrain them when the chat panel is resized narrower. */}
+        <ScrollArea
+          ref={scrollAreaRef}
+          className="flex-1 overflow-hidden [&_[data-slot=scroll-area-viewport]>div]:!block"
+        >
+          <div className="p-3 space-y-3 min-w-0 overflow-hidden w-full">
             {messages.length === 0 && !streamingText && (
               <div className="text-center text-xs text-muted-foreground py-8 space-y-2">
                 <Bot className="h-8 w-8 mx-auto opacity-20" />
