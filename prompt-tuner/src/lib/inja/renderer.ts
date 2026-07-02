@@ -13,7 +13,19 @@ export interface RenderContext {
   variables: Record<string, InjaValue>;
   blocks: Record<string, string>;
   functions: Record<string, (...args: InjaValue[]) => InjaValue | Promise<InjaValue>>;
+  /**
+   * Internal render-step budget. Guards against runaway rendering — e.g. a
+   * self-referential `{% block X %}` override that re-parses and re-renders
+   * itself forever, or an enormous loop. Injected by render(); do not set.
+   */
+  _budget?: { steps: number };
 }
+
+// A template renders inside the Electron main process, so an unbounded render
+// hangs the whole app. These caps are far above any legitimate SkyrimNet prompt
+// (which renders on the order of thousands of steps) but stop pathological input.
+const MAX_RENDER_STEPS = 2_000_000;
+const MAX_RANGE = 1_000_000;
 
 /**
  * Render an Inja template with the given context.
@@ -23,7 +35,10 @@ export async function render(
   ctx: RenderContext
 ): Promise<string> {
   const ast = parse(source);
-  return renderNodes(ast, ctx);
+  const rootCtx: RenderContext = ctx._budget
+    ? ctx
+    : { ...ctx, _budget: { steps: 0 } };
+  return renderNodes(ast, rootCtx);
 }
 
 async function renderNodes(
@@ -41,6 +56,11 @@ async function renderNode(
   node: AstNode,
   ctx: RenderContext
 ): Promise<string> {
+  if (ctx._budget && ++ctx._budget.steps > MAX_RENDER_STEPS) {
+    throw new Error(
+      "Inja render exceeded its step budget — possible infinite recursion (self-referential block) or runaway loop."
+    );
+  }
   switch (node.type) {
     case "text":
       return node.value;
@@ -401,9 +421,15 @@ function getBuiltinFunction(
       return (args) => {
         const start = typeof args[0] === "number" ? args[0] : 0;
         const end = typeof args[1] === "number" ? args[1] : start;
-        const arr: number[] = [];
         const actualStart = args.length === 1 ? 0 : start;
         const actualEnd = args.length === 1 ? start : end;
+        const count = actualEnd - actualStart;
+        if (count > MAX_RANGE) {
+          throw new Error(
+            `range() size ${count} exceeds the maximum of ${MAX_RANGE}.`
+          );
+        }
+        const arr: number[] = [];
         for (let i = actualStart; i < actualEnd; i++) {
           arr.push(i);
         }

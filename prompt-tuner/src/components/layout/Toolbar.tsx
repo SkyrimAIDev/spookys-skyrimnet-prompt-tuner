@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { exportZip } from "@/lib/export/export-zip";
+import { revealPath } from "@/lib/desktop";
 
 export function Toolbar() {
   const toggleLeftPanel = useAppStore((s) => s.toggleLeftPanel);
@@ -149,11 +150,7 @@ export function Toolbar() {
                 try {
                   const resp = await fetch("/api/debug/log");
                   const { path: logPath } = await resp.json();
-                  await fetch("/api/files/open-location", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ filePath: logPath }),
-                  });
+                  await revealPath(logPath);
                   toast.success(`Debug log: ${logPath}`);
                 } catch (err) {
                   toast.error(`Failed to reveal log: ${(err as Error).message}`);

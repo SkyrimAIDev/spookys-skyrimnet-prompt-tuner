@@ -96,14 +96,27 @@ export function resolvePromptSetBase(nameOrPath: string | undefined | null): str
 
 
 /**
+ * True iff `child` is `parent` itself or nested inside it.
+ *
+ * Uses path.relative rather than string startsWith so that a sibling directory
+ * sharing a name prefix (e.g. ".../edited-prompts-evil" vs ".../edited-prompts")
+ * does NOT match. path.relative yields a value beginning with ".." (or an
+ * absolute path) whenever `child` is outside `parent`.
+ */
+function isWithin(child: string, parent: string): boolean {
+  const rel = path.relative(parent, child);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+/**
  * Ensure a path is within the allowed project directories
  */
 export function isPathAllowed(filePath: string): boolean {
   const resolved = path.resolve(filePath);
   return (
-    resolved.startsWith(ORIGINAL_PROMPTS_DIR) ||
-    resolved.startsWith(EDITED_PROMPTS_DIR) ||
-    resolved.startsWith(REFERENCE_DOCS_DIR)
+    isWithin(resolved, ORIGINAL_PROMPTS_DIR) ||
+    isWithin(resolved, EDITED_PROMPTS_DIR) ||
+    isWithin(resolved, REFERENCE_DOCS_DIR)
   );
 }
 
@@ -112,5 +125,5 @@ export function isPathAllowed(filePath: string): boolean {
  */
 export function isReadOnly(filePath: string): boolean {
   const resolved = path.resolve(filePath);
-  return resolved.startsWith(ORIGINAL_PROMPTS_DIR);
+  return isWithin(resolved, ORIGINAL_PROMPTS_DIR);
 }
