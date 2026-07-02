@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Loopback-only guard for all API routes.
+ * Loopback-only guard for all API routes. (Next 16 "proxy" convention — this is
+ * the renamed successor to the old `middleware.ts`.)
  *
  * The Next server is bound to 127.0.0.1 inside the Electron shell, but "bound to
  * loopback" is not by itself a security boundary: any web page the user visits
@@ -9,7 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
  * rebinding can smuggle an attacker-controlled origin onto the loopback address.
  * Because the API routes perform real filesystem I/O, that would be exploitable.
  *
- * This middleware closes both vectors for every /api/* route at once:
+ * This proxy closes both vectors for every /api/* route at once:
  *   - Host header must be a loopback name  → defeats DNS rebinding (the browser
  *     sends the attacker's hostname in Host, not 127.0.0.1).
  *   - Origin header, when present, must be loopback → defeats cross-site CSRF.
@@ -32,7 +33,7 @@ function isLoopbackHost(hostHeader: string | null): boolean {
   );
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   if (!isLoopbackHost(request.headers.get("host"))) {
     return new NextResponse("Forbidden: non-loopback host", { status: 403 });
   }
