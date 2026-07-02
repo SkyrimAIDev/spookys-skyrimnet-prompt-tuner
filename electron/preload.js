@@ -12,3 +12,13 @@ contextBridge.exposeInMainWorld("desktop", {
   // Reveal a file in the OS file manager. Resolves to { ok, error? }.
   revealPath: (filePath) => ipcRenderer.invoke("desktop:revealPath", filePath),
 });
+
+// OS-backed encryption for secrets at rest (API keys in localStorage).
+contextBridge.exposeInMainWorld("secrets", {
+  // Resolves true when the OS credential store is usable.
+  available: () => ipcRenderer.invoke("secrets:available"),
+  // Encrypt a string → base64 ciphertext (or null if unavailable).
+  encrypt: (plaintext) => ipcRenderer.invoke("secrets:encrypt", plaintext),
+  // Decrypt base64 ciphertext → string (or null on failure).
+  decrypt: (b64) => ipcRenderer.invoke("secrets:decrypt", b64),
+});

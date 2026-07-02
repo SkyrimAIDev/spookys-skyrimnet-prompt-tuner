@@ -1,6 +1,6 @@
 "use strict";
 
-const { app, BrowserWindow, shell, ipcMain } = require("electron");
+const { app, BrowserWindow, shell, ipcMain, safeStorage } = require("electron");
 const path = require("path");
 const http = require("http");
 const fs = require("fs");
@@ -84,6 +84,39 @@ function registerIpcHandlers() {
     if (!isPathAllowedMain(filePath)) return { ok: false, error: "Access denied" };
     shell.showItemInFolder(path.resolve(filePath));
     return { ok: true };
+  });
+
+  // ── Secret encryption at rest (safeStorage / OS keychain) ──────────────────
+  // The renderer stores API keys in localStorage. These let it seal that blob
+  // with the OS credential store (DPAPI on Windows) so keys aren't sitting on
+  // disk in plaintext. If encryption isn't available, encrypt returns null and
+  // the renderer falls back to plaintext (same as before).
+  ipcMain.handle("secrets:available", () => {
+    try {
+      return safeStorage.isEncryptionAvailable();
+    } catch {
+      return false;
+    }
+  });
+
+  ipcMain.handle("secrets:encrypt", (_event, plaintext) => {
+    if (typeof plaintext !== "string") return null;
+    try {
+      if (!safeStorage.isEncryptionAvailable()) return null;
+      return safeStorage.encryptString(plaintext).toString("base64");
+    } catch {
+      return null;
+    }
+  });
+
+  ipcMain.handle("secrets:decrypt", (_event, b64) => {
+    if (typeof b64 !== "string") return null;
+    try {
+      if (!safeStorage.isEncryptionAvailable()) return null;
+      return safeStorage.decryptString(Buffer.from(b64, "base64"));
+    } catch {
+      return null;
+    }
   });
 }
 

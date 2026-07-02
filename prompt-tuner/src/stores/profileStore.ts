@@ -14,6 +14,7 @@ import {
   DEFAULT_AGENT_TUNING_OVERRIDES,
   DEFAULT_AGENT_API_OVERRIDES,
 } from "@/types/config";
+import { sealToStorage, openFromStorage } from "@/lib/secrets";
 
 const STORAGE_KEY = "skyrimnet-profiles";
 
@@ -21,7 +22,7 @@ interface ProfileState {
   profiles: SettingsProfile[];
   activeProfileId: string;
 
-  load: (currentGlobalApiKey: string, currentSlots: Record<AgentType, ModelSlot>) => void;
+  load: (currentGlobalApiKey: string, currentSlots: Record<AgentType, ModelSlot>) => Promise<void>;
   save: () => void;
   addProfile: (
     name: string,
@@ -43,12 +44,14 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   profiles: [],
   activeProfileId: "",
 
-  load: (currentGlobalApiKey, currentSlots) => {
+  load: async (currentGlobalApiKey, currentSlots) => {
     if (typeof window === "undefined") return;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const data = JSON.parse(raw);
+      const data = await openFromStorage<{
+        profiles?: SettingsProfile[];
+        activeProfileId?: string;
+      }>(STORAGE_KEY);
+      if (data) {
         const profiles: SettingsProfile[] = data.profiles || [];
         const activeProfileId: string = data.activeProfileId || "";
 
@@ -108,10 +111,8 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   save: () => {
     if (typeof window === "undefined") return;
     const { profiles, activeProfileId } = get();
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ profiles, activeProfileId })
-    );
+    // Seal (OS-encrypt when available); fire-and-forget like configStore.save().
+    void sealToStorage(STORAGE_KEY, { profiles, activeProfileId });
   },
 
   addProfile: (name, globalApiKey, slots) => {
