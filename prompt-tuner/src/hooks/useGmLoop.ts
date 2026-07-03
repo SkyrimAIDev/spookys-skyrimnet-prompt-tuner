@@ -6,6 +6,7 @@ import { useConfigStore } from "@/stores/configStore";
 import { useAppStore } from "@/stores/appStore";
 import { useTriggerStore } from "@/stores/triggerStore";
 import { sendLlmRequest } from "@/lib/llm/client";
+import { buildEnabledSavesPayload } from "@/lib/pipeline/save-bio-payload";
 import { parseGmAction } from "@/lib/gamemaster/action-parser";
 import { scenePlanToTemplateFormat } from "@/types/gamemaster";
 import type { SceneBeat, ScenePlan } from "@/types/gamemaster";
@@ -221,6 +222,8 @@ export function useGmLoop() {
               })),
               gameEvents,
               promptSetBase: activePromptSet || undefined,
+              enabledSaves: buildEnabledSavesPayload(),
+              isNarrationEnabled: useSimulationStore.getState().isNarrationEnabled,
             }),
           });
           const renderData = await renderRes.json();

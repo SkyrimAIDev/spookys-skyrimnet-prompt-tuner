@@ -6,6 +6,7 @@ import { useConfigStore } from "@/stores/configStore";
 import { useAppStore } from "@/stores/appStore";
 import { useTriggerStore } from "@/stores/triggerStore";
 import { sendLlmRequest } from "@/lib/llm/client";
+import { buildEnabledSavesPayload } from "@/lib/pipeline/save-bio-payload";
 import { buildAutochatMessages } from "@/lib/autochat/system-prompt";
 import { parseAutochatResponse } from "@/lib/autochat/response-parser";
 import {
@@ -206,6 +207,8 @@ export function useAutochat() {
             })),
             gameEvents,
             promptSetBase: activePromptSet || undefined,
+            enabledSaves: buildEnabledSavesPayload(),
+            isNarrationEnabled: useSimulationStore.getState().isNarrationEnabled,
           }),
         });
         const renderData = await renderRes.json();
