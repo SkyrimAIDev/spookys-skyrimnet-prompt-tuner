@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { FileNode, OpenFile, PromptSet } from "@/types/files";
+import type { FileNode, OpenFile } from "@/types/files";
 
 interface FileState {
   // File tree
@@ -10,10 +10,6 @@ interface FileState {
   // Open files (tabs)
   openFiles: OpenFile[];
   activeFilePath: string | null;
-
-  // Prompt sets
-  promptSets: PromptSet[];
-  activePromptSetId: string | null;
 
   // Search
   searchQuery: string;
@@ -33,8 +29,6 @@ interface FileState {
   setActiveFile: (path: string) => void;
   updateFileContent: (path: string, content: string) => void;
   markFileSaved: (path: string) => void;
-  setPromptSets: (sets: PromptSet[]) => void;
-  setActivePromptSet: (id: string) => void;
   closeAllFiles: () => void;
   setSearchQuery: (query: string) => void;
   setSearchResults: (results: FileNode[]) => void;
@@ -49,8 +43,6 @@ export const useFileStore = create<FileState>((set, get) => ({
   selectedPath: null,
   openFiles: [],
   activeFilePath: null,
-  promptSets: [],
-  activePromptSetId: null,
   searchQuery: "",
   searchResults: [],
   isLoadingTree: false,
@@ -155,8 +147,6 @@ export const useFileStore = create<FileState>((set, get) => ({
       ),
     })),
 
-  setPromptSets: (sets) => set({ promptSets: sets }),
-  setActivePromptSet: (id) => set({ activePromptSetId: id }),
   closeAllFiles: () => set({ openFiles: [], activeFilePath: null }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setSearchResults: (results) => set({ searchResults: results }),
