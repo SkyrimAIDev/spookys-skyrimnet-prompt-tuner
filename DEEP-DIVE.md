@@ -6,11 +6,11 @@ call sequence, the loops, and where your money goes. Traced from the source in
 
 **Diagram legend** (used in both workflow graphs below):
 
-| Marker | Meaning |
-|---|---|
-| `[MODEL]` | A call to the **model under test** (the one you're benchmarking / tuning). |
+|   Marker  |                                     Meaning                                                                  |
+|-----------|--------------------------------------------------------------------------------------------------------------|
+| `[MODEL]` | A call to the **model under test** (the one you're benchmarking / tuning).                                   |
 | `[TUNER]` | A call to the **Tuner** — a *separate, fixed* model that acts as judge and proposer (default Claude Sonnet). |
-| `( )` | **No model call** — a render, parse, or file write. |
+|   `( )`   | **No model call** — a render, parse, or file write.                                                          |
 
 The single most important thing to internalize: the **Tuner is not one of the
 models you're testing**. It's a fixed slot you configure once in Settings, and
@@ -34,10 +34,10 @@ its one or two subtasks.
 
 ```
                  ┌───────────────────────────────────────────────┐
-                 │  SETUP                                         │
-                 │  N models (profiles + quick models) ·          │
-                 │  one category (= one agent) · scenario ·       │
-                 │  a prompt set                                  │
+                 │  SETUP                                        │
+                 │  N models (profiles + quick models) ·         │
+                 │  one category (= one agent) · scenario ·      │
+                 │  a prompt set                                 │
                  └───────────────────────┬───────────────────────┘
                                          ▼
    ┌─ for each SUBTASK · sequential ──────────────────────────────────┐
@@ -46,10 +46,10 @@ its one or two subtasks.
    │                          │                                       │
    │                          ▼                                       │
    │   ┌─ for each MODEL · parallel ──────────────────────────────┐   │
-   │   │  [MODEL]  1. Response           — latency + tokens        │   │
-   │   │                  │                                        │   │
-   │   │                  ▼                                        │   │
-   │   │  [MODEL]  2. Self-explanation   — feeds "Self-Awareness"  │   │
+   │   │  [MODEL]  1. Response           — latency + tokens       │   │
+   │   │                  │                                       │   │
+   │   │                  ▼                                       │   │
+   │   │  [MODEL]  2. Self-explanation   — feeds "Self-Awareness" │   │
    │   └──────────────────────────────────────────────────────────┘   │
    └───────────────────────────────┬──────────────────────────────────┘
                                    ▼
@@ -120,29 +120,29 @@ qualitatively against previous rounds.
        empty temp prompt set (__tuner_temp__) for any prompt edits
                     │
                     ▼
-  ┌── ROUND — repeats up to Max Rounds (default 5) ────────────────────┐
-  │                                                                    │
-  │   [MODEL] 1. Benchmark         run the agent with current settings │
-  │                  │                                                 │
-  │                  ▼                                                 │
-  │   [MODEL] 2. Self-explanation  same model reflects (not scored)    │
-  │                  │                                                 │
-  │                  ▼                                                 │
-  │   [TUNER] 3. Assess            score 1–10 vs ALL previous rounds   │
-  │                  │                                                 │
-  │                  ▼                                                 │
-  │   [TUNER] 4. Propose           JSON: settings_changes,             │
-  │                  │             prompt_changes, stop_tuning flag     │
-  │                  ▼                                                 │
-  │             stop_tuning? ──── yes ────►  leave the loop            │
-  │                  │ no                                              │
-  │                  ▼                                                 │
-  │   ( )     5. Apply   settings → in-memory working baseline         │
-  │                      prompts  → temp set on disk (path-checked)    │
-  │                  │                                                 │
-  │                  └──────────►  ↺ next round                        │
-  │                               (changes KEPT — greedy, never reverts)│
-  └────────────────────────────────────────────────────────────────────┘
+  ┌── ROUND — repeats up to Max Rounds (default 5) ──────────────────────┐
+  │                                                                      │
+  │   [MODEL] 1. Benchmark         run the agent with current settings   │
+  │                  │                                                   │
+  │                  ▼                                                   │
+  │   [MODEL] 2. Self-explanation  same model reflects (not scored)      │
+  │                  │                                                   │
+  │                  ▼                                                   │
+  │   [TUNER] 3. Assess            score 1–10 vs ALL previous rounds     │
+  │                  │                                                   │
+  │                  ▼                                                   │
+  │   [TUNER] 4. Propose           JSON: settings_changes,               │
+  │                  │             prompt_changes, stop_tuning flag      │
+  │                  ▼                                                   │
+  │             stop_tuning? ──── yes ────►  leave the loop              │
+  │                  │ no                                                │
+  │                  ▼                                                   │
+  │   ( )     5. Apply   settings → in-memory working baseline           │
+  │                      prompts  → temp set on disk (path-checked)      │
+  │                  │                                                   │
+  │                  └──────────► ↺ next round                          │
+  │                               (changes KEPT — greedy, never reverts) │
+  └──────────────────────────────────────────────────────────────────────┘
                     │  (after the loop ends)
                     ▼
    [TUNER] Session summary   synthesize the whole run
