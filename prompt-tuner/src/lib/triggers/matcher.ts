@@ -14,7 +14,15 @@ export function matchTriggers(
   triggers: TriggerYaml[],
   recentEvents: SimulatedEvent[] = []
 ): TriggerMatchResult[] {
-  return triggers.map((trigger) => matchSingleTrigger(event, trigger, recentEvents));
+  const results = triggers.map((trigger) =>
+    matchSingleTrigger(event, trigger, recentEvents)
+  );
+  // Order by trigger priority, highest first — mirroring how the game resolves
+  // competing triggers. Array.sort is stable, so equal-priority triggers keep
+  // their file/load order. A missing priority is treated as 0.
+  return results.sort(
+    (a, b) => (b.trigger.priority ?? 0) - (a.trigger.priority ?? 0)
+  );
 }
 
 function matchSingleTrigger(
