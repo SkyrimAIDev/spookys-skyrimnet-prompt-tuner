@@ -195,10 +195,10 @@ async function evalCall(
     args.push(await evalExpr(arg, ctx));
   }
 
-  // Method call on an object?
+  // Method call on an object — treat obj.name(args) as name(obj, ...args).
   if (expr.callee) {
     const obj = await evalExpr(expr.callee, ctx);
-    return applyBuiltinMethod(expr.name, obj, args);
+    return applyBuiltinMethod(expr.name, obj, args, ctx);
   }
 
   // Built-in functions
@@ -418,9 +418,18 @@ function getBuiltinFunction(
 function applyBuiltinMethod(
   name: string,
   obj: InjaValue,
-  args: InjaValue[]
+  args: InjaValue[],
+  ctx: RenderContext
 ): InjaValue {
-  // Could add string/array methods here if needed
+  // Method syntax `obj.name(args)` is treated as the built-in `name(obj, ...args)`
+  // — the same "value-first" convention as pipe filters — so `xs.append(x)`
+  // yields `append(xs, x)` instead of silently returning undefined.
+  //
+  // The engine is functional / non-mutating: `append` returns a NEW array, so to
+  // accumulate you must assign the result back (`{% set xs = xs.append(x) %}`),
+  // not rely on in-place mutation.
+  const fn = getBuiltinFunction(name);
+  if (fn) return fn([obj, ...args], ctx);
   return undefined;
 }
 
