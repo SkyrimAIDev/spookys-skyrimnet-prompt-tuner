@@ -10,7 +10,7 @@ import { useAppStore } from "@/stores/appStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { useTriggerStore } from "@/stores/triggerStore";
 import { sendLlmRequest, sendLlmRequestWithSlot } from "@/lib/llm/client";
-import { buildQuickModelProfile } from "@/lib/utils/quick-model-profile";
+import { buildQuickModelProfile, quickModelId } from "@/lib/utils/quick-model-profile";
 import { runTargetSelection, runRealActionSelector, runSpeakerPrediction } from "@/lib/pipeline/chat-pipeline";
 import { buildEnabledSavesPayload } from "@/lib/pipeline/save-bio-payload";
 import type { ChatMessage } from "@/types/llm";
@@ -802,7 +802,7 @@ function MultichatStreamingBubble({
   profiles: { id: string; name: string; slots: Record<string, { api: { modelNames: string } }> }[];
 }) {
   // Build combined list: profile entries + quick model entries
-  const quickModelIds = quickModelNames.map((m) => `quick-${m.replace(/[^a-zA-Z0-9]/g, "-")}`);
+  const quickModelIds = quickModelNames.map(quickModelId);
   const allIds = [...profileIds, ...quickModelIds];
   const count = allIds.length;
 

@@ -5,6 +5,17 @@ const SKYRIMNET_AGENTS: SkyrimNetAgentType[] = [
 ];
 
 /**
+ * Deterministic id/DOM-key for a quick-model, derived from its model name.
+ *
+ * buildQuickModelProfile() and the multichat streaming view MUST agree on this
+ * exact string, or live streaming text maps to the wrong column (or none). It
+ * lives here, once, so the two can never drift apart.
+ */
+export function quickModelId(modelName: string): string {
+  return `quick-${modelName.replace(/[^a-zA-Z0-9]/g, "-")}`;
+}
+
+/**
  * Build an ephemeral SettingsProfile from a model name string.
  * Copies all settings from the base profile but swaps the model name
  * for all SkyrimNet agents. The resulting profile can be passed directly
@@ -15,7 +26,7 @@ export function buildQuickModelProfile(
   baseProfile: SettingsProfile,
 ): SettingsProfile {
   // Generate a deterministic ID from the model name so it's stable across renders
-  const id = `quick-${modelName.replace(/[^a-zA-Z0-9]/g, "-")}`;
+  const id = quickModelId(modelName);
 
   // Deep-copy all slots from the base profile, replacing modelNames
   const slots = {} as Record<SkyrimNetAgentType, ModelSlot>;
