@@ -2,7 +2,6 @@ import {
   StreamLanguage,
   StringStream,
 } from "@codemirror/language";
-import { tags as t } from "@lezer/highlight";
 
 /**
  * Custom CodeMirror syntax mode for Inja templates.
