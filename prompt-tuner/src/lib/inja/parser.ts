@@ -429,15 +429,48 @@ class ExprParser {
   }
 
   parseMultiplication(): Expr {
-    let left = this.parsePrimary();
+    let left = this.parseFilterUnit();
     this.skipWhitespace();
     while (this.peek() === "*" || this.peek() === "/" || this.peek() === "%") {
       const op = this.consume();
-      const right = this.parsePrimary();
+      const right = this.parseFilterUnit();
       left = { kind: "binary", op, left, right };
       this.skipWhitespace();
     }
     return left;
+  }
+
+  /**
+   * A primary expression followed by zero or more `| filter` applications.
+   *
+   * Pipe filters bind tightly — just below member access and below the
+   * multiplicative operators — so they compose the way template authors expect:
+   *   name | upper          ->  upper(name)
+   *   list | join(", ")     ->  join(list, ", ")     (the value is arg 0)
+   *   name | upper | lower  ->  lower(upper(name))   (chainable)
+   *   tags | length > 0     ->  (tags | length) > 0  (tighter than comparison)
+   *
+   * The named filter is just a built-in function called with the piped value as
+   * its first argument (see applyFilter in renderer.ts), so any function is also
+   * usable as a filter. An unknown filter passes the value through unchanged.
+   */
+  parseFilterUnit(): Expr {
+    let expr = this.parsePrimary();
+    this.skipWhitespace();
+    while (this.peek() === "|") {
+      this.pos++; // consume '|'
+      const name = this.peekWord();
+      if (!name) break; // a stray trailing '|' — leave it, don't crash
+      this.pos += name.length;
+      let args: Expr[] = [];
+      this.skipWhitespace();
+      if (this.peek() === "(") {
+        args = this.parseArgList();
+      }
+      expr = { kind: "filter", value: expr, filterName: name, args };
+      this.skipWhitespace();
+    }
+    return expr;
   }
 
   parsePrimary(): Expr {
