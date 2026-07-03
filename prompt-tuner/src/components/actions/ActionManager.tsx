@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePersistedSet } from "@/hooks/usePersistedState";
 import { useSimulationStore } from "@/stores/simulationStore";
+import { useAppStore } from "@/stores/appStore";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,15 @@ export function ActionManager() {
   const addCustomAction = useSimulationStore((s) => s.addCustomAction);
   const removeCustomAction = useSimulationStore((s) => s.removeCustomAction);
   const updateCustomAction = useSimulationStore((s) => s.updateCustomAction);
+  const loadActions = useSimulationStore((s) => s.loadActions);
+  const activePromptSet = useAppStore((s) => s.activePromptSet);
+
+  // Pull custom actions defined on disk (config/actions/*.yaml) into the registry
+  // on mount and whenever the active set changes, so YAML-defined actions show up
+  // in the tool alongside registry-native ones.
+  useEffect(() => {
+    loadActions(activePromptSet);
+  }, [activePromptSet, loadActions]);
 
   const [expandedCategories, setExpandedCategories] = usePersistedSet("action-manager-expanded", ["builtin"]);
   const [showAddForm, setShowAddForm] = useState(false);

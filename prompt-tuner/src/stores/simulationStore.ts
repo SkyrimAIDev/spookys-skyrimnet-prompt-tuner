@@ -5,6 +5,8 @@ import type { ActionDefinition } from "@/types/actions";
 import type { LlmCallLog } from "@/types/llm";
 import type { ScenePlan, GmActionEntry } from "@/types/gamemaster";
 import { BUILTIN_ACTIONS, DEFAULT_CUSTOM_ACTIONS } from "@/lib/actions/registry";
+import { mergeYamlActions, YAML_ACTION_ID_PREFIX } from "@/lib/actions/action-yaml";
+import type { CustomActionYaml } from "@/types/yaml-configs";
 
 const ACTIONS_STORAGE_KEY = "skyrimnet-actions";
 const SCENE_STORAGE_KEY = "skyrimnet-scene";
@@ -28,7 +30,10 @@ function loadPersistedActions(): ActionDefinition[] {
 function persistActions(actions: ActionDefinition[]) {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(ACTIONS_STORAGE_KEY, JSON.stringify(actions));
+    // Disk-sourced actions (yaml- prefix) are re-derived from config/actions on
+    // load — never persist them, so deleting a YAML file removes them cleanly.
+    const native = actions.filter((a) => !a.id.startsWith(YAML_ACTION_ID_PREFIX));
+    localStorage.setItem(ACTIONS_STORAGE_KEY, JSON.stringify(native));
   } catch {}
 }
 
@@ -163,6 +168,7 @@ interface SimulationState {
   removeCustomAction: (id: string) => void;
   updateCustomAction: (id: string, updates: Partial<Pick<ActionDefinition, "name" | "description" | "parameterSchema">>) => void;
   getEligibleActions: () => ActionDefinition[];
+  loadActions: (promptSet: string) => Promise<void>;
   setLastAction: (action: { name: string; params?: Record<string, string> } | null) => void;
   setLastSpeakerPrediction: (prediction: string) => void;
   setLastActionSelectorPreview: (preview: SimulationState["lastActionSelectorPreview"]) => void;
@@ -353,6 +359,27 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
 
   getEligibleActions: () => {
     return get().actionRegistry.filter((a) => a.enabled);
+  },
+
+  loadActions: async (promptSet) => {
+    if (typeof window === "undefined") return;
+    try {
+      const res = await fetch(
+        `/api/actions/list?promptSet=${encodeURIComponent(promptSet || "")}`
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      const yamlActions: CustomActionYaml[] = data.actions || [];
+      // Re-derive disk actions from scratch: drop any previously-loaded yaml-
+      // entries, then merge the current set's, so switching sets or deleting a
+      // file is reflected. Registry-native actions shadow disk ones by name.
+      const native = get().actionRegistry.filter(
+        (a) => !a.id.startsWith(YAML_ACTION_ID_PREFIX)
+      );
+      set({ actionRegistry: mergeYamlActions(native, yamlActions) });
+    } catch {
+      // leave the registry unchanged on error
+    }
   },
 
   setLastAction: (action) => set({ lastAction: action }),
