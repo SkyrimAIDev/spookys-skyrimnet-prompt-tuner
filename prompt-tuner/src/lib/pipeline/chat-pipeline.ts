@@ -1,5 +1,6 @@
 import { sendLlmRequest } from "@/lib/llm/client";
 import { buildEnabledSavesPayload } from "@/lib/pipeline/save-bio-payload";
+import { parseSelectedAction } from "@/lib/actions/parse-selected-action";
 import type { ChatMessage, LlmCallLog } from "@/types/llm";
 import type { ChatEntry } from "@/types/simulation";
 import { toast } from "sonner";
@@ -138,24 +139,27 @@ export async function runRealActionSelector(
   addLlmCall(log);
 
   const rawResponse = log.response || "";
-  const actionMatch = rawResponse.match(/ACTION:\s*(\w+)/);
-  const parsedAction = actionMatch ? actionMatch[1] : "None";
+  // Handles both documented formats (JSON and text) and captures PARAMS.
+  const parsed = parseSelectedAction(rawResponse);
 
   setLastActionSelectorPreview({
     renderedPrompt: renderData.renderedText || "",
     messages,
     rawResponse,
-    parsedAction,
+    parsedAction: parsed ? parsed.name : "None",
   });
 
-  if (parsedAction && parsedAction !== "None") {
-    setLastAction({ name: parsedAction });
+  if (parsed) {
+    setLastAction({ name: parsed.name, params: parsed.params });
+    const paramStr = Object.keys(parsed.params).length
+      ? ` (${Object.entries(parsed.params).map(([k, v]) => `${k}=${v}`).join(", ")})`
+      : "";
     addChatEntry({
       id: `${Date.now()}-action`,
       type: "system",
-      content: `[Action: ${parsedAction}]`,
+      content: `[Action: ${parsed.name}${paramStr}]`,
       timestamp: Date.now(),
-      action: { name: parsedAction },
+      action: { name: parsed.name, params: parsed.params },
     });
   } else {
     setLastAction(null);
