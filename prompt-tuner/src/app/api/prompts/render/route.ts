@@ -45,10 +45,21 @@ export async function POST(request: NextRequest) {
       }
       templateSource = await fs.readFile(templatePath, "utf-8");
     } else {
+      // A relative templatePath is resolved against baseDir (and, on miss, the
+      // originals dir). Validate each candidate so "../" can't escape the
+      // allowed roots and read arbitrary files off disk.
+      const primary = path.join(baseDir, templatePath);
+      if (!isPathAllowed(primary)) {
+        return NextResponse.json({ error: "Access denied" }, { status: 403 });
+      }
       try {
-        templateSource = await fs.readFile(path.join(baseDir, templatePath), "utf-8");
+        templateSource = await fs.readFile(primary, "utf-8");
       } catch {
-        templateSource = await fs.readFile(path.join(ORIGINAL_PROMPTS_DIR, templatePath), "utf-8");
+        const fallback = path.join(ORIGINAL_PROMPTS_DIR, templatePath);
+        if (!isPathAllowed(fallback)) {
+          return NextResponse.json({ error: "Access denied" }, { status: 403 });
+        }
+        templateSource = await fs.readFile(fallback, "utf-8");
       }
     }
 

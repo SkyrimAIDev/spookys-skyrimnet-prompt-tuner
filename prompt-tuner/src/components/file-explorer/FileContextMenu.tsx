@@ -6,6 +6,7 @@ import { useAppStore } from "@/stores/appStore";
 import { toast } from "sonner";
 import { ChevronRight } from "lucide-react";
 import type { FileNode } from "@/types/files";
+import { openPath, revealPath } from "@/lib/desktop";
 
 interface Position { x: number; y: number }
 
@@ -142,27 +143,19 @@ export function FileContextMenu({ node, position, onClose }: FileContextMenuProp
 
   const openExternal = async () => {
     onClose();
-    const res = await fetch("/api/files/open-external", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filePath: node.path }),
-    });
-    if (!res.ok) {
-      const d = await res.json();
-      toast.error(d.error || "Failed to open in external editor");
+    try {
+      await openPath(node.path);
+    } catch (err) {
+      toast.error((err as Error).message || "Failed to open in external editor");
     }
   };
 
   const revealInExplorer = async () => {
     onClose();
-    const res = await fetch("/api/files/open-location", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filePath: node.path }),
-    });
-    if (!res.ok) {
-      const d = await res.json();
-      toast.error(d.error || "Failed to reveal in explorer");
+    try {
+      await revealPath(node.path);
+    } catch (err) {
+      toast.error((err as Error).message || "Failed to reveal in explorer");
     }
   };
 

@@ -14,6 +14,7 @@ import {
   DEFAULT_AGENT_TUNING_OVERRIDES,
   DEFAULT_AGENT_API_OVERRIDES,
 } from "@/types/config";
+import { sealToStorage, openFromStorage } from "@/lib/secrets";
 
 const ALL_AGENTS: AgentType[] = [
   "default",
@@ -66,7 +67,7 @@ interface ConfigState {
     profileSlots: Record<SkyrimNetAgentType, ModelSlot>
   ) => void;
   save: () => void;
-  load: () => void;
+  load: () => Promise<void>;
 }
 
 export const useConfigStore = create<ConfigState>((set, get) => ({
@@ -174,13 +175,12 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   save: () => {
     if (typeof window === "undefined") return;
     const state = get();
-    localStorage.setItem(
-      "skyrimnet-config",
-      JSON.stringify({
-        globalApiKey: state.globalApiKey,
-        slots: state.slots,
-      })
-    );
+    // Seal (OS-encrypt when available) — fire-and-forget; persistence is
+    // best-effort and callers don't await save().
+    void sealToStorage("skyrimnet-config", {
+      globalApiKey: state.globalApiKey,
+      slots: state.slots,
+    });
 
     // Sync changes to the active profile
     const { useProfileStore } = require("@/stores/profileStore");
@@ -190,12 +190,14 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     }
   },
 
-  load: () => {
+  load: async () => {
     if (typeof window === "undefined") return;
     try {
-      const raw = localStorage.getItem("skyrimnet-config");
-      if (raw) {
-        const data = JSON.parse(raw);
+      const data = await openFromStorage<{
+        globalApiKey?: string;
+        slots?: Record<AgentType, ModelSlot>;
+      }>("skyrimnet-config");
+      if (data && data.slots) {
         const defaults = createDefaultSlots();
         const mergedSlots = { ...defaults };
 
@@ -247,15 +249,16 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   },
 }));
 
-// Auto-load from localStorage on creation (runs once, client-side only)
+// Auto-load from localStorage on creation (runs once, client-side only).
 if (typeof window !== "undefined") {
-  useConfigStore.getState().load();
-
-  // Also load profiles now that config is hydrated
-  // (profileStore.load() needs the current config to create defaults if no profiles exist)
-  Promise.resolve().then(() => {
-    const { useProfileStore } = require("@/stores/profileStore");
-    const config = useConfigStore.getState();
-    useProfileStore.getState().load(config.globalApiKey, config.slots);
-  });
+  // Hydrate config first (async — may need to OS-decrypt), then profiles, which
+  // depend on the current config to seed a "Default" profile when none exist.
+  useConfigStore
+    .getState()
+    .load()
+    .then(() => {
+      const { useProfileStore } = require("@/stores/profileStore");
+      const config = useConfigStore.getState();
+      return useProfileStore.getState().load(config.globalApiKey, config.slots);
+    });
 }

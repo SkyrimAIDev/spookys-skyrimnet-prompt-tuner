@@ -98,6 +98,12 @@ export async function POST(request: NextRequest) {
 
       const destPath = path.join(targetPrompts, relPath);
 
+      // Confine every write to this set's own prompts dir. Without this, a
+      // dropped entry named "../../../reference-docs/original-prompts/x.prompt"
+      // resolves (via path.join) into the read-only originals dir — which
+      // isPathAllowed permits — and would overwrite bundled prompts.
+      const rel = path.relative(targetPrompts, destPath);
+      if (rel.startsWith("..") || path.isAbsolute(rel)) continue;
       if (!isPathAllowed(destPath)) continue;
 
       await fs.mkdir(path.dirname(destPath), { recursive: true });

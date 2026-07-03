@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
 import { resolvePromptSetBaseServer } from "@/lib/files/paths-server";
+import { isPathAllowed } from "@/lib/files/paths";
 
 /**
  * GET /api/files/list-saves?promptSet=overwrite
@@ -12,6 +13,12 @@ export async function GET(request: NextRequest) {
     const promptSet = request.nextUrl.searchParams.get("promptSet") || "";
     const baseDir = resolvePromptSetBaseServer(promptSet || undefined);
     const savesDir = path.join(baseDir, "_saves");
+
+    // promptSet is client-supplied and may be an absolute path (returned as-is),
+    // so confine directory enumeration to the app's own dirs.
+    if (!isPathAllowed(savesDir)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
 
     let saveIds: string[];
     try {

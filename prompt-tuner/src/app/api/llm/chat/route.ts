@@ -1,5 +1,47 @@
 import { NextRequest } from "next/server";
 
+/** Loopback + private-LAN hosts we allow to receive the key over plain http. */
+function isLocalHost(hostname: string): boolean {
+  const h = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (h === "localhost" || h === "127.0.0.1" || h === "::1") return true;
+  if (/^10\./.test(h)) return true; // RFC1918
+  if (/^192\.168\./.test(h)) return true; // RFC1918
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true; // RFC1918
+  if (/^169\.254\./.test(h)) return true; // link-local
+  if (h.endsWith(".local")) return true; // mDNS
+  return false;
+}
+
+/**
+ * Validate the user-supplied API endpoint before we attach the API key to it.
+ *
+ * The tool intentionally supports any OpenAI-compatible endpoint (OpenRouter,
+ * OpenAI, local LM Studio/Ollama/vLLM, …), so we can't allowlist hosts. But we
+ * can refuse to (a) hand the key to a non-http(s) scheme (e.g. file:/data:), and
+ * (b) send the key in cleartext to a non-local host — require https unless the
+ * target is loopback or a private-LAN address.
+ *
+ * Returns an error message, or null when the endpoint is acceptable.
+ */
+function validateApiEndpoint(endpoint: unknown): string | null {
+  if (typeof endpoint !== "string" || endpoint.trim() === "") {
+    return "No API endpoint configured. Open Settings to set one.";
+  }
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return "API endpoint is not a valid URL.";
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    return `API endpoint must use http or https (got "${url.protocol}").`;
+  }
+  if (url.protocol === "http:" && !isLocalHost(url.hostname)) {
+    return "Refusing to send the API key over plain http to a non-local host. Use https, or a localhost/LAN endpoint.";
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -36,6 +78,11 @@ export async function POST(request: NextRequest) {
         { error: "No model configured for this agent slot." },
         { status: 400 }
       );
+    }
+
+    const endpointError = validateApiEndpoint(apiEndpoint);
+    if (endpointError) {
+      return Response.json({ error: endpointError }, { status: 400 });
     }
 
     // Build request payload (OpenAI-compatible format)
@@ -135,7 +182,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Redact API key from payload echo
+    // Echo the request payload back to the client for the analysis panel. The
+    // API key lives only in the Authorization header — it was never part of
+    // `payload` — so this echo contains nothing sensitive.
     const payloadEcho = { ...payload };
 
     if (stream && response.body) {
