@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Download, Loader2, FileText, FilePlus } from "lucide-react";
 import { toast } from "sonner";
+import { useSimulationStore } from "@/stores/simulationStore";
+import { appendCustomActionFiles } from "@/lib/export/custom-action-export";
 
 interface ExportFile {
   path: string;
@@ -49,9 +51,15 @@ export function ExportDialog({
         toast.error(data.error);
         return;
       }
-      setFiles(data.files || []);
+      // Include the user's registry-native custom actions as config/actions/*.yaml
+      // so they're previewed here and ship in the zip.
+      const merged = appendCustomActionFiles(
+        data.files || [],
+        useSimulationStore.getState().actionRegistry,
+      ) as ExportFile[];
+      setFiles(merged);
       setLoaded(true);
-      if ((data.files || []).length === 0) {
+      if (merged.length === 0) {
         toast.info("No modified or new files found in this prompt set.");
       }
     } catch (e) {
