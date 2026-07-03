@@ -1,4 +1,6 @@
 import { toast } from "sonner";
+import { useSimulationStore } from "@/stores/simulationStore";
+import { appendCustomActionFiles, type ExportFile } from "@/lib/export/custom-action-export";
 
 export async function exportZip(promptSetName: string): Promise<void> {
   try {
@@ -6,7 +8,13 @@ export async function exportZip(promptSetName: string): Promise<void> {
     const data = await res.json();
     if (data.error) { toast.error(data.error); return; }
 
-    const files: { skyrimPath: string; content: string }[] = data.files || [];
+    // Merge in the user's registry-native custom actions as config/actions/*.yaml
+    // so what was tuned in the tool ships alongside the edited prompts.
+    const manifestFiles: ExportFile[] = data.files || [];
+    const files = appendCustomActionFiles(
+      manifestFiles,
+      useSimulationStore.getState().actionRegistry,
+    );
     if (files.length === 0) {
       toast.info("No modified files to export in this prompt set.");
       return;
