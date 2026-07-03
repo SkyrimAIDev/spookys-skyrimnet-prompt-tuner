@@ -119,6 +119,14 @@ The Prompt Tuner works with any OpenAI-compatible API endpoint. Tested providers
 
 ---
 
+## Documentation
+
+Guides and source-traced architecture deep-dives live in **[`docs/`](docs/OVERVIEW.md)** —
+a [quickstart](docs/QUICKSTART.md) plus deep dives into how each subsystem
+actually works.
+
+---
+
 ## License
 
 [MIT](LICENSE)
